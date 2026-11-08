@@ -1,0 +1,12 @@
+# Keep the build context small and free of secrets.
+**/node_modules
+**/dist
+**/target
+**/.svelte-kit
+.git
+.env
+.env.*
+!.env.example
+docs
+apps/desktop
+*.md
