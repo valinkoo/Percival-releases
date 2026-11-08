@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+**/src-tauri/target
+**/src-tauri/gen
+**/src-tauri/icons
+**/prisma/migrations
+**/src/generated

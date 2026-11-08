@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Dependency build scripts are blocked by default. argon2 ships prebuilt binaries
+# for Windows and Linux (x64/arm64), and esbuild resolves its binary at runtime,
+# so neither install script is needed. @prisma/engines downloads the schema engine
+# used by `prisma migrate`, which we want baked in at install time (Docker image).
+allowBuilds:
+  argon2: false
+  esbuild: false
+  prisma: false
+  '@prisma/engines': true
