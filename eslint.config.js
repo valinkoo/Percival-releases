@@ -21,7 +21,7 @@ export default defineConfig(
   prettier,
   svelte.configs.prettier,
   {
-    files: ['apps/server/**', 'packages/**', '*.js'],
+    files: ['apps/server/**', 'packages/**', 'scripts/**', '*.js'],
     languageOptions: { globals: globals.node },
   },
   {

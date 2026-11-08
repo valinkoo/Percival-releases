@@ -1,0 +1,60 @@
+# Builds the signed Windows installer and publishes it as a GitHub Release when a version tag
+# (vX.Y.Z) is pushed. Installed clients find the update through the release's latest.json.
+# Setup and release steps: docs/RELEASE.md.
+#
+# Third-party actions are pinned to a full commit SHA (the tag is in the comment): this job holds
+# the updater signing key, so a moved tag must not be able to change what runs here.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check that the tag matches the app version
+        shell: bash
+        run: node scripts/check-version.mjs "$GITHUB_REF_NAME"
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # The desktop build imports the compiled shared types.
+      - run: pnpm --filter @percival/shared build
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Percival ${{ github.ref_name }}
+          releaseBody: Installateur Windows de Percival (fichier `setup.exe`). Les versions déjà installées se mettent à jour toutes seules.
+          releaseDraft: false
+          prerelease: false
+          updaterJsonPreferNsis: true
