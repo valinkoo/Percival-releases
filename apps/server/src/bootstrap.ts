@@ -11,6 +11,15 @@ export async function ensureRoles(prisma: PrismaClient): Promise<void> {
   }
 }
 
+/** Creates the default channel on a fresh installation, so there is somewhere to write. */
+export async function ensureDefaultChannel(prisma: PrismaClient): Promise<void> {
+  if ((await prisma.channel.count()) === 0) {
+    await prisma.channel.create({
+      data: { name: 'general', description: 'Discussions générales' },
+    });
+  }
+}
+
 export type CreateFirstAdminResult =
   { status: 'created'; username: string } | { status: 'already_exists' };
 

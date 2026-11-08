@@ -6,8 +6,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Config } from './config.js';
 import type { PrismaClient } from './db.js';
 import { AppError, registerErrorHandling } from './errors.js';
+import { createRealtime } from './realtime/hub.js';
 import { authRoutes } from './routes/auth.js';
+import { channelRoutes } from './routes/channels.js';
 import { healthRoutes } from './routes/health.js';
+import { loadAccount, type Account } from './users/account.js';
 
 export interface AppDependencies {
   config: Config;
@@ -24,6 +27,7 @@ export async function buildApp({ config, prisma }: AppDependencies): Promise<Fas
 
   app.decorate('config', config);
   app.decorate('prisma', prisma);
+  app.decorateRequest('account', null as unknown as Account);
   registerErrorHandling(app);
 
   await app.register(helmet);
@@ -46,10 +50,22 @@ export async function buildApp({ config, prisma }: AppDependencies): Promise<Fas
     } catch {
       throw new AppError(401, 'unauthorized', 'Missing or invalid token');
     }
+    const account = await loadAccount(prisma, request.user.sub);
+    if (!account) {
+      throw new AppError(401, 'unauthorized', 'The account no longer exists');
+    }
+    request.account = account;
+  });
+
+  const realtime = createRealtime(app);
+  app.decorate('realtime', realtime);
+  app.addHook('onClose', async () => {
+    await realtime.close();
   });
 
   await app.register(healthRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api/auth' });
+  await app.register(channelRoutes, { prefix: '/api/channels' });
 
   return app;
 }

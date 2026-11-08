@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { createFirstAdmin, ensureRoles } from './bootstrap.js';
+import { createFirstAdmin, ensureDefaultChannel, ensureRoles } from './bootstrap.js';
 import { loadConfig } from './config.js';
 import { createPrismaClient } from './db.js';
 
@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   const app = await buildApp({ config, prisma });
 
   await ensureRoles(prisma);
+  await ensureDefaultChannel(prisma);
 
   // Optional bootstrap of the first administrator (see .env.example).
   if (config.ADMIN_USERNAME && config.ADMIN_PASSWORD) {

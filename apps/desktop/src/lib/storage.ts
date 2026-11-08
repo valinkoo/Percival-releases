@@ -9,11 +9,10 @@
  * Tauri), the token falls back to sessionStorage so the UI can still be developed.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { inTauri } from './tauri';
 
 const SERVER_URL_KEY = 'percival.serverUrl';
 const DEV_TOKEN_KEY = 'percival.devToken';
-
-const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export function loadServerUrl(): string | null {
   try {

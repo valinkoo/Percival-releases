@@ -4,7 +4,7 @@ Messagerie de bureau locale, auto-hébergée et structurée en salons : une alte
 
 Percival est le socle d'un futur écosystème logiciel, avec une intégration prévue avec 4Elements.
 
-> **État :** v0.0.1 en recette (fondations : serveur, base de données, connexion).
+> **État :** v0.0.2 en recette (salons, messages en temps réel, Markdown sécurisé).
 
 ## Stack
 
@@ -23,7 +23,7 @@ La spécification complète se trouve dans [`docs/DAT.md`](docs/DAT.md), amendem
 .
 ├─ apps/
 │  ├─ desktop/   client Tauri + Svelte (src-tauri : coque Rust)
-│  └─ server/    API Fastify + Prisma (Socket.io à partir de la v0.0.2)
+│  └─ server/    API Fastify + Socket.io + Prisma
 ├─ packages/
 │  └─ shared/    types et constantes partagés client / serveur
 ├─ docs/         DAT et décisions
@@ -50,10 +50,13 @@ Autres commandes utiles :
 | `pnpm build`                      | compile les types partagés, le serveur et l'interface |
 | `pnpm typecheck`                  | vérifie les types de tout le monorepo                 |
 | `pnpm lint` / `pnpm format:check` | ESLint et Prettier                                    |
+| `pnpm test`                       | tests du serveur et du client (voir ci-dessous)       |
 | `docker compose up -d db`         | PostgreSQL seul, pour lancer l'API à la main          |
 | `pnpm dev:server`                 | API sur l'hôte (utilise `DATABASE_URL` de `.env`)     |
 | `docker compose logs -f api`      | logs de l'API                                         |
 | `docker compose down`             | arrête la pile (`-v` efface aussi la base de données) |
+
+**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur et la gestion des erreurs de l'API.
 
 Le client n'accepte que `localhost` ou une adresse Tailscale (`*.ts.net`, en HTTPS) comme adresse de serveur : c'est volontaire, la politique de sécurité (CSP) de l'application l'impose.
 

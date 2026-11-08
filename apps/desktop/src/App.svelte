@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import HomeScreen from './components/HomeScreen.svelte';
+  import ChatScreen from './components/ChatScreen.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import { session } from './lib/session.svelte';
 
@@ -14,7 +14,7 @@
     <p>Chargement…</p>
   </main>
 {:else if session.status === 'signedIn'}
-  <HomeScreen />
+  <ChatScreen />
 {:else}
   <LoginScreen />
 {/if}
