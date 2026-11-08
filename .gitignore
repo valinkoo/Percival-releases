@@ -23,6 +23,9 @@ target/
 *.pfx
 .tauri/
 
+# Generated code (rebuilt by `prisma generate`)
+**/src/generated/
+
 # Server runtime data
 uploads/
 pgdata/

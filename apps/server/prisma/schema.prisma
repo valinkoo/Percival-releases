@@ -1,0 +1,164 @@
+// Percival data model. See docs/DAT.md (section 4 and "Amendements").
+//
+// Conventions:
+// - UUID v7 primary keys (time-ordered, which keeps cursor pagination cheap).
+// - Table and column names are snake_case in the database, camelCase in code.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  username     String   @unique
+  /// argon2id hash. Null for bots, which authenticate with access tokens.
+  passwordHash String?  @map("password_hash")
+  isBot        Boolean  @default(false) @map("is_bot")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  roles          UserRole[]
+  messages       Message[]
+  channelMembers ChannelMember[]
+  accessTokens   AccessToken[]
+  webhooks       Webhook[]
+
+  @@map("users")
+}
+
+/// Global roles: admin, member, guest, bot (identifiers, see packages/shared).
+model Role {
+  id          String @id @default(uuid(7)) @db.Uuid
+  name        String @unique
+  permissions Json   @default("{}")
+
+  users UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Channel {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String   @unique
+  description String   @default("")
+  isPrivate   Boolean  @default(false) @map("is_private")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  messages Message[]
+  members  ChannelMember[]
+  webhooks Webhook[]
+
+  @@map("channels")
+}
+
+/// Explicit membership: gives guests access to specific channels and
+/// defines who can see a private channel.
+model ChannelMember {
+  channelId String   @map("channel_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@index([userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  channelId String    @map("channel_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// Markdown source. Sanitized at render time on the client.
+  content   String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+  /// Soft delete: the row is kept for the archive.
+  deletedAt DateTime? @map("deleted_at")
+
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  attachments Attachment[]
+
+  /// History pagination within a channel.
+  @@index([channelId, createdAt, id])
+  @@index([userId])
+  @@map("messages")
+}
+
+model Attachment {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  /// Path relative to the uploads directory on the server.
+  filePath  String   @map("file_path")
+  /// Original file name, for display and download.
+  fileName  String   @map("file_name")
+  /// MIME type, checked against an allowlist at upload time.
+  fileType  String   @map("file_type")
+  /// Size in bytes (25 MB limit).
+  fileSize  Int      @map("file_size")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+/// Personal access tokens for bots. Only the SHA-256 hash is stored.
+model AccessToken {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  name        String
+  tokenHash   String    @unique @map("token_hash")
+  /// First characters of the token, to recognize it in a list.
+  tokenPrefix String    @map("token_prefix")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  expiresAt   DateTime? @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("access_tokens")
+}
+
+/// Inbound webhooks: POST /api/webhooks/:token posts into `channel` as `bot`.
+model Webhook {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  name      String
+  tokenHash String    @unique @map("token_hash")
+  channelId String    @map("channel_id") @db.Uuid
+  botUserId String    @map("bot_user_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  bot     User    @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@index([botUserId])
+  @@map("webhooks")
+}
