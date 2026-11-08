@@ -11,6 +11,7 @@ const MESSAGES: Record<ApiErrorCode, string> = {
   unauthorized: 'Votre session a expiré. Reconnectez-vous.',
   forbidden: "Vous n'avez pas le droit d'effectuer cette action.",
   not_found: 'Ressource introuvable.',
+  conflict: 'Un salon porte déjà ce nom.',
   rate_limited: 'Trop de tentatives. Réessayez dans une minute.',
   internal_error: 'Erreur du serveur. Réessayez plus tard.',
 };

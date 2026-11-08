@@ -1,5 +1,5 @@
 import type { LoginResponse, UserDto } from '@percival/shared';
-import { ApiError, fetchMe, login } from './api';
+import { ApiError, fetchMe, login, onUnauthorized } from './api';
 import { errorMessage } from './messages';
 import { parseServerUrl } from './server-url';
 import { deleteToken, loadServerUrl, loadToken, saveServerUrl, saveToken } from './storage';
@@ -80,6 +80,13 @@ class Session {
     return null;
   }
 
+  /** The server refused the token: back to the login screen, with an explanation. */
+  async expire(): Promise<void> {
+    if (this.status !== 'signedIn') return;
+    await this.signOut();
+    this.notice = 'Votre session a expiré. Reconnectez-vous.';
+  }
+
   async signOut(): Promise<void> {
     this.#token = null;
     this.user = null;
@@ -98,3 +105,6 @@ class Session {
 }
 
 export const session = new Session();
+
+// Any authenticated request rejected with "unauthorized" ends the session.
+onUnauthorized(() => void session.expire());

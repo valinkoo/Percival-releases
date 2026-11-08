@@ -1,10 +1,15 @@
 import {
   ERROR_CODES,
   type ApiErrorBody,
+  type ChannelsResponse,
+  type CreateChannelRequest,
+  type CreateChannelResponse,
   type ErrorCode,
   type LoginRequest,
   type LoginResponse,
   type MeResponse,
+  type MessagesPageResponse,
+  type SendMessageResponse,
 } from '@percival/shared';
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -33,13 +38,28 @@ function isErrorCode(value: unknown): value is ErrorCode {
   return typeof value === 'string' && (ERROR_CODES as readonly string[]).includes(value);
 }
 
-async function request<T>(serverUrl: string, path: string, init: RequestInit = {}): Promise<T> {
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Called when the server rejects the session token (expired, or the account is gone). */
+export function onUnauthorized(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+async function request<T>(
+  serverUrl: string,
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  const headers = new Headers(init.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
   let response: Response;
   try {
-    response = await fetch(`${serverUrl}${path}`, { ...init, signal: controller.signal });
+    response = await fetch(`${serverUrl}${path}`, { ...init, headers, signal: controller.signal });
   } catch {
     throw new ApiError('network', 0);
   } finally {
@@ -56,6 +76,7 @@ async function request<T>(serverUrl: string, path: string, init: RequestInit = {
   if (!response.ok) {
     const code = (payload as Partial<ApiErrorBody> | null)?.error?.code;
     if (isErrorCode(code)) {
+      if (code === 'unauthorized' && token) unauthorizedHandler?.();
       throw new ApiError(code, response.status);
     }
     const unreachable = PROXY_UNREACHABLE_STATUSES.has(response.status);
@@ -69,16 +90,59 @@ async function request<T>(serverUrl: string, path: string, init: RequestInit = {
   return payload as T;
 }
 
-export function login(serverUrl: string, credentials: LoginRequest): Promise<LoginResponse> {
-  return request<LoginResponse>(serverUrl, '/api/auth/login', {
+function jsonBody(body: unknown): RequestInit {
+  return {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials),
-  });
+    body: JSON.stringify(body),
+  };
+}
+
+export function login(serverUrl: string, credentials: LoginRequest): Promise<LoginResponse> {
+  return request<LoginResponse>(serverUrl, '/api/auth/login', jsonBody(credentials));
 }
 
 export function fetchMe(serverUrl: string, token: string): Promise<MeResponse> {
-  return request<MeResponse>(serverUrl, '/api/auth/me', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  return request<MeResponse>(serverUrl, '/api/auth/me', {}, token);
+}
+
+export function listChannels(serverUrl: string, token: string): Promise<ChannelsResponse> {
+  return request<ChannelsResponse>(serverUrl, '/api/channels', {}, token);
+}
+
+export function createChannel(
+  serverUrl: string,
+  token: string,
+  channel: CreateChannelRequest,
+): Promise<CreateChannelResponse> {
+  return request<CreateChannelResponse>(serverUrl, '/api/channels', jsonBody(channel), token);
+}
+
+export function fetchMessages(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  before?: string,
+): Promise<MessagesPageResponse> {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<MessagesPageResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/messages${query}`,
+    {},
+    token,
+  );
+}
+
+export function sendMessage(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  content: string,
+): Promise<SendMessageResponse> {
+  return request<SendMessageResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/messages`,
+    jsonBody({ content }),
+    token,
+  );
 }
