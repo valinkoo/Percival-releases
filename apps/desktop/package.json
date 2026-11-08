@@ -1,6 +1,6 @@
 {
   "name": "@percival/desktop",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Percival desktop client: Tauri v2 + Svelte",
   "type": "module",
@@ -16,6 +16,8 @@
     "@percival/shared": "workspace:*",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-opener": "^2.7.2",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "dompurify": "^3.4.17",
     "markdown-it": "^15.0.3",
     "socket.io-client": "^4.8.4"

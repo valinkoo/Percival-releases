@@ -3,9 +3,12 @@
   import ChatScreen from './components/ChatScreen.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import { session } from './lib/session.svelte';
+  import { updater } from './lib/updater.svelte';
 
   onMount(() => {
     void session.restore();
+    updater.start();
+    return () => updater.stop();
   });
 </script>
 

@@ -21,6 +21,7 @@ target/
 *.key
 *.p12
 *.pfx
+*.password.txt
 .tauri/
 
 # Generated code (rebuilt by `prisma generate`)

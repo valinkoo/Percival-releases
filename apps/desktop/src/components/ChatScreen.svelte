@@ -1,16 +1,22 @@
 <script lang="ts">
+  import { getVersion } from '@tauri-apps/api/app';
   import { onDestroy, onMount } from 'svelte';
   import { chat } from '../lib/chat.svelte';
   import { ROLE_LABELS } from '../lib/roles';
   import { session } from '../lib/session.svelte';
+  import { inTauri } from '../lib/tauri';
   import ChannelList from './ChannelList.svelte';
   import Composer from './Composer.svelte';
   import MessageList from './MessageList.svelte';
+  import UpdateBanner from './UpdateBanner.svelte';
 
   let signingOut = $state(false);
+  let appVersion = $state('');
 
   onMount(() => {
     void chat.start();
+    // The running build, shown in the header (only known inside the Tauri shell).
+    if (inTauri) void getVersion().then((version) => (appVersion = version));
   });
   onDestroy(() => chat.stop());
 
@@ -32,7 +38,10 @@
 
 <div class="layout">
   <header>
-    <span class="brand"><span class="logo" aria-hidden="true">P</span> Percival</span>
+    <span class="brand">
+      <span class="logo" aria-hidden="true">P</span> Percival
+      {#if appVersion}<span class="version">v{appVersion}</span>{/if}
+    </span>
     <div class="right">
       <span class="status {chat.connection}" role="status">
         <span class="dot" aria-hidden="true"></span>{CONNECTION_LABELS[chat.connection]}
@@ -46,6 +55,8 @@
       <button type="button" onclick={signOut} disabled={signingOut}>Déconnexion</button>
     </div>
   </header>
+
+  <UpdateBanner />
 
   {#if session.notice}
     <p class="banner" role="status">{session.notice}</p>
@@ -105,6 +116,12 @@
     background: var(--accent);
     color: var(--accent-text);
     font-size: 15px;
+  }
+
+  .version {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 400;
   }
 
   .right {
