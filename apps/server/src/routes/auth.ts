@@ -47,14 +47,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Returns the current user. The client uses it to check that a stored token is still valid.
-  app.get('/me', { onRequest: [app.authenticate] }, async (request): Promise<MeResponse> => {
-    const user = await app.prisma.user.findUnique({
-      where: { id: request.user.sub },
-      include: userInclude,
-    });
-    if (!user) {
-      throw new AppError(401, 'unauthorized', 'The account no longer exists');
-    }
-    return { user: toUserDto(user) };
-  });
+  app.get('/me', { onRequest: [app.authenticate] }, async (request): Promise<MeResponse> => ({
+    user: request.account,
+  }));
 };
