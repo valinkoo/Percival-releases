@@ -4,7 +4,7 @@ Messagerie de bureau locale, auto-hébergée et structurée en salons : une alte
 
 Percival est le socle d'un futur écosystème logiciel, avec une intégration prévue avec 4Elements.
 
-> **État :** v0.0.2 en recette (salons, messages en temps réel, Markdown sécurisé).
+> **État :** v0.0.2 validée (salons, messages en temps réel, Markdown sécurisé), avec installateur Windows et mises à jour automatiques.
 
 ## Stack
 
@@ -64,7 +64,7 @@ Le client n'accepte que `localhost` ou une adresse Tailscale (`*.ts.net`, en HTT
 
 - Développement par petites versions `0.0.x`, suivies sur un tableau Trello.
 - À la fin de chaque version : recette globale, correction des bugs, puis version suivante.
-- Après la v0.0.2 : installateur Windows et mises à jour automatiques via GitHub Releases.
+- Installateur Windows et mises à jour automatiques via GitHub Releases : voir [`docs/RELEASE.md`](docs/RELEASE.md) (mise en place, publication d'une version, build local).
 
 ### Git
 
