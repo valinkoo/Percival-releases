@@ -4,7 +4,7 @@ Messagerie de bureau locale, auto-hébergée et structurée en salons : une alte
 
 Percival est le socle d'un futur écosystème logiciel, avec une intégration prévue avec 4Elements.
 
-> **État :** v0.0.2 validée (salons, messages en temps réel, Markdown sécurisé), avec installateur Windows et mises à jour automatiques.
+> **État :** v0.0.3 validée (salons, messages en temps réel, Markdown sécurisé, modification et suppression de ses messages, indicateur de frappe, messages non lus, notifications Windows, rattrapage après une coupure, fenêtre Paramètres avec thème et mises à jour), avec installateur Windows et mises à jour automatiques.
 
 ## Stack
 
@@ -56,7 +56,7 @@ Autres commandes utiles :
 | `docker compose logs -f api`      | logs de l'API                                         |
 | `docker compose down`             | arrête la pile (`-v` efface aussi la base de données) |
 
-**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur et la gestion des erreurs de l'API.
+**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur, la gestion des erreurs de l'API, la remise à jour de l'historique après une coupure, les notifications, le thème et les mises à jour.
 
 Le client n'accepte que `localhost` ou une adresse Tailscale (`*.ts.net`, en HTTPS) comme adresse de serveur : c'est volontaire, la politique de sécurité (CSP) de l'application l'impose.
 
