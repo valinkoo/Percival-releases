@@ -23,6 +23,8 @@ serde_json = "1"
 # Automatic updates from GitHub Releases (signed bundles, see docs/RELEASE.md) and the restart that follows.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Native Windows notifications for messages received while the window is in the background.
+tauri-plugin-notification = "2"
 # Session token storage: Windows Credential Manager.
 keyring = { version = "3", features = ["windows-native"] }
 
