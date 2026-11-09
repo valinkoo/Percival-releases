@@ -1,6 +1,6 @@
 {
   "name": "@percival/desktop",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Percival desktop client: Tauri v2 + Svelte",
   "type": "module",

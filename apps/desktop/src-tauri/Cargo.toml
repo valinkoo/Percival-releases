@@ -1,6 +1,6 @@
 [package]
 name = "percival"
-version = "0.0.2"
+version = "0.0.3"
 description = "Percival desktop client"
 authors = ["Dreamastral Studio"]
 edition = "2021"
