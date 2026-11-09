@@ -1,6 +1,7 @@
 import type {
   ChannelDto,
   ClientToServerEvents,
+  MessageDeletedEvent,
   MessageDto,
   ServerToClientEvents,
 } from '@percival/shared';
@@ -26,9 +27,16 @@ type RealtimeServer = Server<
 
 const channelRoom = (channelId: string): string => `channel:${channelId}`;
 
+/** Clients throttle their own "typing" signals; this only protects the server from a noisy one. */
+const TYPING_MIN_GAP_MS = 1000;
+
 export interface Realtime {
   /** Pushes a stored message to every socket in the channel's room. */
   publishMessage(message: MessageDto): void;
+  /** Tells the channel's room that a message was edited. */
+  publishMessageUpdated(message: MessageDto): void;
+  /** Tells the channel's room that a message was deleted. */
+  publishMessageDeleted(event: MessageDeletedEvent): void;
   /** Tells every socket allowed to see the new channel about it, and subscribes them. */
   publishChannel(channel: ChannelDto): Promise<void>;
   close(): Promise<void>;
@@ -75,6 +83,19 @@ export function createRealtime(app: FastifyInstance): Realtime {
     // message published right after the handshake is missed.
     void socket.join(channelIds.map(channelRoom));
 
+    // "Typing" signals are relayed to the other members of the channel. A socket can only signal
+    // in the channels it is subscribed to, and no more than once a second per channel.
+    const lastTypingAt = new Map<string, number>();
+    socket.on('typing', (payload) => {
+      const channelId: unknown = (payload as { channelId?: unknown } | null)?.channelId;
+      if (typeof channelId !== 'string' || !socket.rooms.has(channelRoom(channelId))) return;
+      const now = Date.now();
+      if (now - (lastTypingAt.get(channelId) ?? 0) < TYPING_MIN_GAP_MS) return;
+      lastTypingAt.set(channelId, now);
+      const { id, username } = socket.data.account;
+      socket.to(channelRoom(channelId)).emit('user_typing', { channelId, user: { id, username } });
+    });
+
     const timer = setTimeout(() => socket.disconnect(true), Math.max(0, expiresAt - Date.now()));
     timer.unref();
     socket.on('disconnect', () => clearTimeout(timer));
@@ -83,6 +104,14 @@ export function createRealtime(app: FastifyInstance): Realtime {
   return {
     publishMessage(message) {
       io.to(channelRoom(message.channelId)).emit('new_message', message);
+    },
+
+    publishMessageUpdated(message) {
+      io.to(channelRoom(message.channelId)).emit('message_updated', message);
+    },
+
+    publishMessageDeleted(event) {
+      io.to(channelRoom(event.channelId)).emit('message_deleted', event);
     },
 
     async publishChannel(channel) {

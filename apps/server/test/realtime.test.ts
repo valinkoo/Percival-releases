@@ -1,8 +1,10 @@
 import type {
   ChannelDto,
   ClientToServerEvents,
+  MessageDeletedEvent,
   MessageDto,
   ServerToClientEvents,
+  UserTypingEvent,
 } from '@percival/shared';
 import { io, type Socket } from 'socket.io-client';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -65,10 +67,16 @@ describe('realtime', () => {
   /** Collects what a socket receives, to assert on it after the server had time to deliver. */
   function listen(socket: ClientSocket) {
     const messages: MessageDto[] = [];
+    const updated: MessageDto[] = [];
+    const deleted: MessageDeletedEvent[] = [];
+    const typing: UserTypingEvent[] = [];
     const channels: ChannelDto[] = [];
     socket.on('new_message', (message) => messages.push(message));
+    socket.on('message_updated', (message) => updated.push(message));
+    socket.on('message_deleted', (event) => deleted.push(event));
+    socket.on('user_typing', (event) => typing.push(event));
     socket.on('channel_created', (channel) => channels.push(channel));
-    return { messages, channels };
+    return { messages, updated, deleted, typing, channels };
   }
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -184,6 +192,96 @@ describe('realtime', () => {
     await waitFor(() => received.member.messages.length > 0);
     await settle();
     expect(received.member.messages.map((message) => message.content)).toEqual(['premier message']);
+  });
+
+  it('pushes edits and deletions to everyone who can see the channel, and only them', async () => {
+    const memberSocket = await connect(member.token);
+    const adminSocket = await connect(admin.token);
+    const guestSocket = await connect(guest.token);
+    const received = {
+      member: listen(memberSocket),
+      admin: listen(adminSocket),
+      guest: listen(guestSocket),
+    };
+
+    const created = await post(member.token, generalId, 'brouillon');
+    const { message } = created.json<{ message: MessageDto }>();
+
+    const edited = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/channels/${generalId}/messages/${message.id}`,
+      headers: authHeader(member.token),
+      payload: { content: 'version finale' },
+    });
+    expect(edited.statusCode).toBe(200);
+    await waitFor(() => received.member.updated.length > 0 && received.admin.updated.length > 0);
+
+    const removed = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/channels/${generalId}/messages/${message.id}`,
+      headers: authHeader(member.token),
+    });
+    expect(removed.statusCode).toBe(200);
+    await waitFor(() => received.member.deleted.length > 0 && received.admin.deleted.length > 0);
+    await settle(); // and nothing is delivered twice, or to the guest
+
+    for (const { updated, deleted } of [received.member, received.admin]) {
+      expect(updated).toHaveLength(1);
+      expect(updated[0]).toMatchObject({ id: message.id, content: 'version finale' });
+      expect(updated[0]?.editedAt).not.toBeNull();
+      expect(deleted).toEqual([{ id: message.id, channelId: generalId }]);
+    }
+    expect(received.guest.updated).toEqual([]);
+    expect(received.guest.deleted).toEqual([]);
+  });
+
+  it('relays "typing" to the other members of the channel, never back to the sender', async () => {
+    const memberSocket = await connect(member.token);
+    const adminSocket = await connect(admin.token);
+    const guestSocket = await connect(guest.token);
+    const received = {
+      member: listen(memberSocket),
+      admin: listen(adminSocket),
+      guest: listen(guestSocket),
+    };
+
+    memberSocket.emit('typing', { channelId: generalId });
+    await waitFor(() => received.admin.typing.length > 0);
+    await settle();
+
+    expect(received.admin.typing).toEqual([
+      { channelId: generalId, user: { id: member.id, username: 'member' } },
+    ]);
+    expect(received.member.typing).toEqual([]);
+    expect(received.guest.typing).toEqual([]); // guests do not see general
+  });
+
+  it('ignores "typing" for channels the sender cannot see, and malformed signals', async () => {
+    const memberSocket = await connect(member.token);
+    const guestSocket = await connect(guest.token);
+    const adminSocket = await connect(admin.token);
+    const { typing } = listen(adminSocket);
+
+    memberSocket.emit('typing', { channelId: privateId }); // members cannot see it
+    guestSocket.emit('typing', { channelId: generalId }); // guests cannot see it either
+    memberSocket.emit('typing', { channelId: 42 } as never);
+    memberSocket.emit('typing', null as never);
+    memberSocket.emit('typing', { channelId: 'channel:not-a-room' });
+    await settle();
+
+    expect(typing).toEqual([]);
+  });
+
+  it('throttles repeated "typing" signals of one sender in one channel', async () => {
+    const memberSocket = await connect(member.token);
+    const adminSocket = await connect(admin.token);
+    const { typing } = listen(adminSocket);
+
+    for (let i = 0; i < 5; i++) memberSocket.emit('typing', { channelId: generalId });
+    await waitFor(() => typing.length > 0);
+    await settle();
+
+    expect(typing).toHaveLength(1);
   });
 
   it('disconnects a socket when its token expires', async () => {
