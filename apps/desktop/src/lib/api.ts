@@ -4,9 +4,13 @@ import {
   type ChannelsResponse,
   type CreateChannelRequest,
   type CreateChannelResponse,
+  type DeleteMessageResponse,
+  type EditMessageResponse,
   type ErrorCode,
   type LoginRequest,
   type LoginResponse,
+  type MarkChannelReadRequest,
+  type MarkChannelReadResponse,
   type MeResponse,
   type MessagesPageResponse,
   type SendMessageResponse,
@@ -90,9 +94,9 @@ async function request<T>(
   return payload as T;
 }
 
-function jsonBody(body: unknown): RequestInit {
+function jsonBody(body: unknown, method = 'POST'): RequestInit {
   return {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   };
@@ -143,6 +147,50 @@ export function sendMessage(
     serverUrl,
     `/api/channels/${encodeURIComponent(channelId)}/messages`,
     jsonBody({ content }),
+    token,
+  );
+}
+
+export function editMessage(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  messageId: string,
+  content: string,
+): Promise<EditMessageResponse> {
+  return request<EditMessageResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}`,
+    jsonBody({ content }, 'PATCH'),
+    token,
+  );
+}
+
+export function deleteMessage(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  messageId: string,
+): Promise<DeleteMessageResponse> {
+  // No body, hence no Content-Type: the server would refuse an empty JSON body.
+  return request<DeleteMessageResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: 'DELETE' },
+    token,
+  );
+}
+
+export function markChannelRead(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  messageId: string,
+): Promise<MarkChannelReadResponse> {
+  return request<MarkChannelReadResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/read`,
+    jsonBody({ messageId } satisfies MarkChannelReadRequest),
     token,
   );
 }

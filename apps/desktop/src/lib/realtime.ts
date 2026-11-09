@@ -1,9 +1,11 @@
 import type {
   ChannelDto,
   ClientToServerEvents,
+  MessageDeletedEvent,
   MessageDto,
   ServerToClientEvents,
   SocketAuth,
+  UserTypingEvent,
 } from '@percival/shared';
 import { io, type Socket } from 'socket.io-client';
 
@@ -12,11 +14,20 @@ export type ConnectionState = 'connecting' | 'connected' | 'offline';
 export interface RealtimeHandlers {
   onState(state: ConnectionState): void;
   onMessage(message: MessageDto): void;
+  onMessageUpdated(message: MessageDto): void;
+  onMessageDeleted(event: MessageDeletedEvent): void;
+  onTyping(event: UserTypingEvent): void;
   onChannel(channel: ChannelDto): void;
   /** The connection came back after a loss: events may have been missed in between. */
   onResume(): void;
   /** The server refused the token (expired, or the account no longer exists). */
   onUnauthorized(): void;
+}
+
+export interface RealtimeConnection {
+  /** Tells the other members of a channel that this user is typing. */
+  sendTyping(channelId: string): void;
+  close(): void;
 }
 
 /** Delay before reconnecting after the server closed the connection on purpose. */
@@ -31,7 +42,7 @@ export function connectRealtime(
   serverUrl: string,
   token: string,
   handlers: RealtimeHandlers,
-): { close(): void } {
+): RealtimeConnection {
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(serverUrl, {
     // WebSocket only: no long-polling fallback, which keeps the CSP and the proxies simple.
     transports: ['websocket'],
@@ -74,9 +85,16 @@ export function connectRealtime(
   });
 
   socket.on('new_message', (message) => handlers.onMessage(message));
+  socket.on('message_updated', (message) => handlers.onMessageUpdated(message));
+  socket.on('message_deleted', (event) => handlers.onMessageDeleted(event));
+  socket.on('user_typing', (event) => handlers.onTyping(event));
   socket.on('channel_created', (channel) => handlers.onChannel(channel));
 
   return {
+    sendTyping(channelId) {
+      // A signal sent while offline is useless by the time the connection is back.
+      if (socket.connected) socket.emit('typing', { channelId });
+    },
     close() {
       closed = true;
       clearTimeout(retryTimer);

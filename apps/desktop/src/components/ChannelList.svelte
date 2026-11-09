@@ -90,16 +90,26 @@
   {:else}
     <ul>
       {#each chat.channels as channel (channel.id)}
+        {@const unread = chat.unread[channel.id] ?? 0}
         <li>
           <button
             type="button"
             class="channel"
             class:active={channel.id === chat.activeChannelId}
+            class:has-unread={unread > 0}
             aria-current={channel.id === chat.activeChannelId ? 'true' : undefined}
             title={channel.description || undefined}
             onclick={() => chat.select(channel.id)}
           >
-            <span class="hash" aria-hidden="true">#</span>{channel.name}
+            <span class="name"><span class="hash" aria-hidden="true">#</span>{channel.name}</span>
+            {#if unread > 0}
+              <span
+                class="unread"
+                aria-label={`${unread} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}`}
+              >
+                {unread > 99 ? '99+' : unread}
+              </span>
+            {/if}
           </button>
         </li>
       {/each}
@@ -141,18 +151,42 @@
   }
 
   .channel {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     width: 100%;
     padding: 6px 10px;
-    overflow: hidden;
     background: none;
     border: 0;
     border-radius: 6px;
     color: var(--text-muted);
     text-align: left;
+    cursor: pointer;
+  }
+
+  .name {
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    cursor: pointer;
+  }
+
+  .channel.has-unread {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .unread {
+    flex-shrink: 0;
+    min-width: 20px;
+    padding: 0 6px;
+    background: var(--accent);
+    border-radius: 999px;
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
   }
 
   .channel:hover {

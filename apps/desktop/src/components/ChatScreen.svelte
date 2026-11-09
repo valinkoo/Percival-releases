@@ -8,6 +8,7 @@
   import ChannelList from './ChannelList.svelte';
   import Composer from './Composer.svelte';
   import MessageList from './MessageList.svelte';
+  import TypingIndicator from './TypingIndicator.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
 
   let signingOut = $state(false);
@@ -75,6 +76,7 @@
         </div>
         {#key chat.activeChannel.id}
           <MessageList channelId={chat.activeChannel.id} />
+          <TypingIndicator channelId={chat.activeChannel.id} />
           <Composer channelId={chat.activeChannel.id} channelName={chat.activeChannel.name} />
         {/key}
       {:else if !chat.loading && !chat.error}
