@@ -1,45 +1,35 @@
 :root {
-  color-scheme: dark light;
+  /* The theme setting (Paramètres) narrows this to `dark` or `light` through data-theme;
+     without it, the app follows Windows. Each color is `light-dark(light, dark)`. */
+  color-scheme: light dark;
 
-  --bg: #14151a;
-  --surface: #1c1e26;
-  --surface-raised: #242733;
-  --border: #323646;
-  --text: #e8e9ef;
-  --text-muted: #9a9fb2;
-  --accent: #6c6cf0;
-  --accent-hover: #8080ff;
+  --bg: light-dark(#f2f3f7, #14151a);
+  --surface: light-dark(#ffffff, #1c1e26);
+  --surface-raised: light-dark(#f6f7fb, #242733);
+  --border: light-dark(#d5d8e3, #323646);
+  --text: light-dark(#1b1d27, #e8e9ef);
+  --text-muted: light-dark(#5d6275, #9a9fb2);
+  --accent: light-dark(#4f4fd8, #6c6cf0);
+  --accent-hover: light-dark(#3d3dc0, #8080ff);
   --accent-text: #ffffff;
-  --danger-bg: #3a1d24;
-  --danger-border: #7a3342;
-  --danger-text: #ffb4c0;
-  --info-bg: #1f2a3d;
-  --info-border: #36507a;
-  --info-text: #b6d0ff;
-  --focus: #9ea0ff;
+  --danger-bg: light-dark(#fde8ec, #3a1d24);
+  --danger-border: light-dark(#f0a4b2, #7a3342);
+  --danger-text: light-dark(#8a1d33, #ffb4c0);
+  --info-bg: light-dark(#e6efff, #1f2a3d);
+  --info-border: light-dark(#a9c4f5, #36507a);
+  --info-text: light-dark(#1d4a8a, #b6d0ff);
+  --focus: light-dark(#4f4fd8, #9ea0ff);
 
   --radius: 10px;
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f2f3f7;
-    --surface: #ffffff;
-    --surface-raised: #f6f7fb;
-    --border: #d5d8e3;
-    --text: #1b1d27;
-    --text-muted: #5d6275;
-    --accent: #4f4fd8;
-    --accent-hover: #3d3dc0;
-    --danger-bg: #fde8ec;
-    --danger-border: #f0a4b2;
-    --danger-text: #8a1d33;
-    --info-bg: #e6efff;
-    --info-border: #a9c4f5;
-    --info-text: #1d4a8a;
-    --focus: #4f4fd8;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 *,

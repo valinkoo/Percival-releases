@@ -1,61 +1,40 @@
 <script lang="ts">
-  import { getVersion } from '@tauri-apps/api/app';
   import { onDestroy, onMount } from 'svelte';
   import { chat } from '../lib/chat.svelte';
-  import { ROLE_LABELS } from '../lib/roles';
+  import { CONNECTION_LABELS } from '../lib/connection';
   import { session } from '../lib/session.svelte';
-  import { inTauri } from '../lib/tauri';
   import ChannelList from './ChannelList.svelte';
   import Composer from './Composer.svelte';
   import MessageList from './MessageList.svelte';
+  import SettingsPanel from './SettingsPanel.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
 
-  let signingOut = $state(false);
-  let appVersion = $state('');
+  let settingsOpen = $state(false);
 
   onMount(() => {
     void chat.start();
-    // The running build, shown in the header (only known inside the Tauri shell).
-    if (inTauri) void getVersion().then((version) => (appVersion = version));
   });
   onDestroy(() => chat.stop());
-
-  async function signOut() {
-    signingOut = true;
-    try {
-      await session.signOut();
-    } finally {
-      signingOut = false;
-    }
-  }
-
-  const CONNECTION_LABELS = {
-    connected: 'Connecté',
-    connecting: 'Connexion…',
-    offline: 'Reconnexion…',
-  } as const;
 </script>
 
 <div class="layout">
   <header>
     <span class="brand">
       <span class="logo" aria-hidden="true">P</span> Percival
-      {#if appVersion}<span class="version">v{appVersion}</span>{/if}
     </span>
     <div class="right">
       <span class="status {chat.connection}" role="status">
         <span class="dot" aria-hidden="true"></span>{CONNECTION_LABELS[chat.connection]}
       </span>
-      <span class="user">
-        {session.user?.username}
-        <span class="role">
-          {session.user?.roles.map((role) => ROLE_LABELS[role]).join(', ')}
-        </span>
-      </span>
-      <button type="button" onclick={signOut} disabled={signingOut}>Déconnexion</button>
+      <span class="user">{session.user?.username}</span>
+      <button type="button" onclick={() => (settingsOpen = true)}>Paramètres</button>
     </div>
   </header>
+
+  {#if settingsOpen}
+    <SettingsPanel onclose={() => (settingsOpen = false)} />
+  {/if}
 
   <UpdateBanner />
 
@@ -120,12 +99,6 @@
     font-size: 15px;
   }
 
-  .version {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 400;
-  }
-
   .right {
     display: flex;
     align-items: center;
@@ -159,13 +132,7 @@
     color: var(--text);
   }
 
-  .role {
-    margin-left: 6px;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-
-  button {
+  .right button {
     padding: 6px 14px;
     background: var(--surface-raised);
     border: 1px solid var(--border);
@@ -173,13 +140,8 @@
     cursor: pointer;
   }
 
-  button:hover:not(:disabled) {
+  .right button:hover {
     border-color: var(--accent);
-  }
-
-  button:disabled {
-    opacity: 0.6;
-    cursor: progress;
   }
 
   .banner {
