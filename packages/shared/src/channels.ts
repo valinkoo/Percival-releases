@@ -9,6 +9,11 @@ export interface ChannelDto {
 
 export interface ChannelsResponse {
   channels: ChannelDto[];
+  /**
+   * Unread messages of the authenticated user, by channel id. Channels with nothing unread are
+   * left out. Messages written by the user themselves never count.
+   */
+  unread: Record<string, number>;
 }
 
 export interface CreateChannelRequest {

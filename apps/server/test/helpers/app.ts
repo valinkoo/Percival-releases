@@ -44,7 +44,7 @@ export async function createTestContext(
 /** Empties every table, then restores what the server creates at startup. */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE webhooks, access_tokens, attachments, messages, channel_members, channels, user_roles, roles, users RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE webhooks, access_tokens, attachments, messages, channel_reads, channel_members, channels, user_roles, roles, users RESTART IDENTITY CASCADE',
   );
   await ensureRoles(prisma);
   await ensureDefaultChannel(prisma);

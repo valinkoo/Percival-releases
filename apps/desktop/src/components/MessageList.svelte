@@ -1,8 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { chat } from '../lib/chat.svelte';
-  import { formatFullDate, formatTimestamp } from '../lib/format';
-  import MarkdownContent from './MarkdownContent.svelte';
+  import MessageItem from './MessageItem.svelte';
 
   let { channelId }: { channelId: string } = $props();
 
@@ -59,7 +58,11 @@
     if (!container) return;
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
-    pinnedToBottom = distanceFromBottom < NEAR_BOTTOM_PX;
+    const atBottom = distanceFromBottom < NEAR_BOTTOM_PX;
+    if (atBottom !== pinnedToBottom) {
+      pinnedToBottom = atBottom;
+      chat.setAtBottom(atBottom); // Reading the newest messages is what marks a channel as read.
+    }
     if (container.scrollTop < NEAR_TOP_PX) void loadOlder();
   }
 </script>
@@ -90,18 +93,7 @@
     {/if}
 
     {#each rows as { message, showHeader } (message.id)}
-      <article class="message" class:grouped={!showHeader}>
-        {#if showHeader}
-          <header>
-            <span class="author">{message.author.username}</span>
-            {#if message.author.isBot}<span class="badge">BOT</span>{/if}
-            <time datetime={message.createdAt} title={formatFullDate(message.createdAt)}>
-              {formatTimestamp(message.createdAt)}
-            </time>
-          </header>
-        {/if}
-        <MarkdownContent source={message.content} />
-      </article>
+      <MessageItem {message} {showHeader} />
     {/each}
   {/if}
 </div>
@@ -156,38 +148,5 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     cursor: pointer;
-  }
-
-  .message {
-    margin-top: 14px;
-  }
-
-  .message.grouped {
-    margin-top: 2px;
-  }
-
-  header {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 2px;
-  }
-
-  .author {
-    font-weight: 600;
-  }
-
-  .badge {
-    padding: 0 6px;
-    background: var(--accent);
-    border-radius: 4px;
-    color: var(--accent-text);
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  time {
-    color: var(--text-muted);
-    font-size: 12px;
   }
 </style>

@@ -58,6 +58,7 @@
     <textarea
       bind:this={field}
       bind:value={content}
+      oninput={() => content.trim() !== '' && chat.notifyTyping(channelId)}
       onkeydown={handleKeydown}
       rows="1"
       placeholder={`Écrire dans #${channelName} (Markdown accepté, Maj+Entrée pour un retour à la ligne)`}

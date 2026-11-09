@@ -1,6 +1,9 @@
 import type {
   ChannelsResponse,
   CreateChannelResponse,
+  DeleteMessageResponse,
+  EditMessageResponse,
+  MarkChannelReadResponse,
   MessagesPageResponse,
   SendMessageResponse,
 } from '@percival/shared';
@@ -11,17 +14,26 @@ import { listAccessibleChannels } from '../channels/access.js';
 import { toChannelDto } from '../channels/serialize.js';
 import { channelDescriptionSchema, channelNameSchema } from '../channels/validation.js';
 import { AppError } from '../errors.js';
-import { listMessages, postMessage } from '../messages/service.js';
+import {
+  countUnread,
+  deleteMessage,
+  editMessage,
+  listMessages,
+  markChannelRead,
+  postMessage,
+} from '../messages/service.js';
 import { isAdmin } from '../users/account.js';
 
 const channelParamsSchema = z.object({ channelId: z.uuid() });
+const messageParamsSchema = z.object({ channelId: z.uuid(), messageId: z.uuid() });
 
 const createChannelBodySchema = z.object({
   name: channelNameSchema,
   description: channelDescriptionSchema.optional(),
 });
 
-const sendMessageBodySchema = z.object({
+/** Sending and editing share the same rules for the text. */
+const messageBodySchema = z.object({
   content: z
     .string()
     .max(MESSAGE_MAX_LENGTH)
@@ -29,6 +41,8 @@ const sendMessageBodySchema = z.object({
     // Trailing blank space is noise; leading spaces can matter in Markdown (indented code).
     .transform((value) => value.trimEnd()),
 });
+
+const markReadBodySchema = z.object({ messageId: z.uuid() });
 
 const messagesQuerySchema = z.object({
   before: z.uuid().optional(),
@@ -44,7 +58,8 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/', async (request): Promise<ChannelsResponse> => {
     const channels = await listAccessibleChannels(app.prisma, request.account);
-    return { channels: channels.map(toChannelDto) };
+    const unread = await countUnread(app.prisma, request.account, channels);
+    return { channels: channels.map(toChannelDto), unread };
   });
 
   app.post('/', async (request, reply): Promise<CreateChannelResponse> => {
@@ -83,10 +98,40 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply): Promise<SendMessageResponse> => {
       const { channelId } = channelParamsSchema.parse(request.params);
-      const { content } = sendMessageBodySchema.parse(request.body);
+      const { content } = messageBodySchema.parse(request.body);
       const message = await postMessage(app, request.account, channelId, content);
       reply.status(201);
       return { message };
+    },
+  );
+
+  app.patch(
+    '/:channelId/messages/:messageId',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request): Promise<EditMessageResponse> => {
+      const { channelId, messageId } = messageParamsSchema.parse(request.params);
+      const { content } = messageBodySchema.parse(request.body);
+      const message = await editMessage(app, request.account, channelId, messageId, content);
+      return { message };
+    },
+  );
+
+  app.delete(
+    '/:channelId/messages/:messageId',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request): Promise<DeleteMessageResponse> => {
+      const { channelId, messageId } = messageParamsSchema.parse(request.params);
+      return deleteMessage(app, request.account, channelId, messageId);
+    },
+  );
+
+  app.post(
+    '/:channelId/read',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request): Promise<MarkChannelReadResponse> => {
+      const { channelId } = channelParamsSchema.parse(request.params);
+      const { messageId } = markReadBodySchema.parse(request.body);
+      return markChannelRead(app, request.account, channelId, messageId);
     },
   );
 };

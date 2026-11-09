@@ -74,8 +74,15 @@ Décisions prises avec le propriétaire du projet avant le début du développem
 ### Modèle de données
 
 - Tables ajoutées : `channel_members` (salons privés et invités), `access_tokens` (jetons des bots, stockés hachés), `webhooks` (jeton haché, salon cible, bot associé).
-- `messages` reçoit un champ `deleted_at` (suppression logique).
+- `messages` reçoit un champ `deleted_at` (suppression logique) et, depuis la v0.0.3, `edited_at` (date de la dernière modification par l'auteur).
+- Depuis la v0.0.3, la table `channel_reads` (utilisateur, salon, date de dernière lecture) mémorise ce que chacun a lu : les messages non lus sont comptés par le serveur, pas par le client.
 - Les rôles sont **globaux uniquement**, sans droits par salon.
+
+### Messages (v0.0.3)
+
+- Seul l'auteur modifie ou supprime son message. La modération par les rôles Admin et Modo viendra avec la v0.0.5.
+- Événements temps réel : `message_updated` (message complet), `message_deleted` (identifiants), `user_typing` (relayé aux autres membres du salon, jamais à l'émetteur ; le client l'émet au plus toutes les 3 s, l'indicateur disparaît après 5 s).
+- Après une coupure, le client récupère les messages manqués, les modifications et les suppressions par l'API REST (dernière page de chaque salon déjà ouvert).
 
 ### Comptes
 

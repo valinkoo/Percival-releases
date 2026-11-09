@@ -1,7 +1,15 @@
-import type { ChannelDto, MessageDto } from '@percival/shared';
+import {
+  TYPING_EXPIRES_MS,
+  TYPING_SEND_INTERVAL_MS,
+  type ChannelDto,
+  type MessageDto,
+  type UserTypingEvent,
+} from '@percival/shared';
 import * as api from './api';
+import { applyEvents, mergeMessages, reconcileLatestPage, type HistoryEvent } from './history';
 import { errorMessage } from './messages';
-import { connectRealtime, type ConnectionState } from './realtime';
+import { notificationBody, showNotification } from './notify';
+import { connectRealtime, type ConnectionState, type RealtimeConnection } from './realtime';
 import { session } from './session.svelte';
 
 const ACTIVE_CHANNEL_KEY = 'percival.activeChannel';
@@ -32,18 +40,6 @@ function writeActiveChannel(id: string): void {
   }
 }
 
-/** Merges message lists without duplicates, oldest first. */
-function mergeMessages(...lists: MessageDto[][]): MessageDto[] {
-  // A later list wins when the same message appears twice (e.g. a live push and a refetch).
-  const byId: Record<string, MessageDto> = {};
-  for (const list of lists) {
-    for (const message of list) byId[message.id] = message;
-  }
-  return Object.values(byId).sort(
-    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-  );
-}
-
 class Chat {
   channels = $state<ChannelDto[]>([]);
   activeChannelId = $state<string | null>(null);
@@ -53,10 +49,26 @@ class Chat {
   loading = $state(false);
   /** Error loading the channel list, shown with a retry button. */
   error = $state<string | null>(null);
+  /** Unread messages by channel id; channels with nothing unread have no entry. */
+  unread = $state<Record<string, number>>({});
+  /** Who is typing, by channel id then user id (their name). Entries expire on their own. */
+  typing = $state<Record<string, Record<string, string>>>({});
+  /** The window is in the foreground: messages that arrive are seen, not notified. */
+  windowFocused = $state(true);
+  /** The open channel is scrolled to its newest message. */
+  atBottom = $state(true);
 
-  #realtime: { close(): void } | null = null;
-  /** Messages pushed while a channel's first page was still being fetched. */
-  #pending = new Map<string, MessageDto[]>();
+  #realtime: RealtimeConnection | null = null;
+  /**
+   * What happened to a channel's history while it was being fetched. The fetched page may predate
+   * these events, so they are replayed on top of it.
+   */
+  #pending = new Map<string, HistoryEvent[]>();
+  #typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #typingSentAt = new Map<string, number>();
+  /** Last message reported as read to the server, by channel id. */
+  #markedRead = new Map<string, string>();
+  #untrackFocus: (() => void) | null = null;
 
   get activeChannel(): ChannelDto | null {
     return this.channels.find((channel) => channel.id === this.activeChannelId) ?? null;
@@ -72,10 +84,14 @@ class Chat {
     this.#realtime = connectRealtime(session.serverUrl, token, {
       onState: (state) => (this.connection = state),
       onMessage: (message) => this.#receive(message),
+      onMessageUpdated: (message) => this.#dispatch(message.channelId, { kind: 'upsert', message }),
+      onMessageDeleted: ({ id, channelId }) => this.#dispatch(channelId, { kind: 'remove', id }),
+      onTyping: (event) => this.#onTyping(event),
       onChannel: (channel) => this.#addChannel(channel),
       onResume: () => void this.#resync(),
       onUnauthorized: () => void session.expire(),
     });
+    this.#trackFocus();
 
     await this.#loadChannels();
   }
@@ -83,13 +99,48 @@ class Chat {
   stop(): void {
     this.#realtime?.close();
     this.#realtime = null;
+    this.#untrackFocus?.();
+    this.#untrackFocus = null;
+    for (const timer of this.#typingTimers.values()) clearTimeout(timer);
+    this.#typingTimers.clear();
+    this.#typingSentAt.clear();
+    this.#markedRead.clear();
     this.#pending.clear();
     this.channels = [];
     this.activeChannelId = null;
     this.histories = {};
+    this.unread = {};
+    this.typing = {};
+    this.atBottom = true;
     this.connection = 'offline';
     this.loading = false;
     this.error = null;
+  }
+
+  /** Follows whether the window is in the foreground, to decide what counts as seen. */
+  #trackFocus(): void {
+    const update = () =>
+      this.setFocused(document.hasFocus() && document.visibilityState === 'visible');
+    window.addEventListener('focus', update);
+    window.addEventListener('blur', update);
+    document.addEventListener('visibilitychange', update);
+    update();
+    this.#untrackFocus = () => {
+      window.removeEventListener('focus', update);
+      window.removeEventListener('blur', update);
+      document.removeEventListener('visibilitychange', update);
+    };
+  }
+
+  setFocused(focused: boolean): void {
+    this.windowFocused = focused;
+    if (focused) this.#maybeMarkRead();
+  }
+
+  /** The message list reports whether the reader is at the newest message. */
+  setAtBottom(atBottom: boolean): void {
+    this.atBottom = atBottom;
+    if (atBottom) this.#maybeMarkRead();
   }
 
   async #loadChannels(): Promise<void> {
@@ -98,8 +149,11 @@ class Chat {
     this.loading = true;
     this.error = null;
     try {
-      const { channels } = await api.listChannels(session.serverUrl, token);
+      const { channels, unread } = await api.listChannels(session.serverUrl, token);
       this.channels = channels;
+      // The app updates itself, the server is updated by hand: tolerate a server that predates
+      // the read state instead of breaking the channel list.
+      this.unread = unread ?? {};
     } catch (error) {
       this.error = errorMessage(error);
       return;
@@ -118,9 +172,12 @@ class Chat {
 
   async select(channelId: string): Promise<void> {
     this.activeChannelId = channelId;
+    this.atBottom = true; // The list of a freshly opened channel starts at its newest message.
     writeActiveChannel(channelId);
     if (!this.histories[channelId]) {
       await this.#loadLatest(channelId);
+    } else {
+      this.#maybeMarkRead();
     }
   }
 
@@ -135,11 +192,12 @@ class Chat {
       loadingOlder: false,
       error: null,
     };
+    this.#pending.set(channelId, []);
     try {
       const page = await api.fetchMessages(session.serverUrl, token, channelId);
       const history = this.histories[channelId];
       if (history) {
-        history.messages = mergeMessages(page.messages, this.#pending.get(channelId) ?? []);
+        history.messages = applyEvents(page.messages, this.#pending.get(channelId) ?? []);
         history.nextBefore = page.nextBefore;
       }
     } catch (error) {
@@ -150,6 +208,7 @@ class Chat {
       const history = this.histories[channelId];
       if (history) history.loading = false;
     }
+    this.#maybeMarkRead();
   }
 
   retryHistory(channelId: string): Promise<void> {
@@ -186,6 +245,38 @@ class Chat {
     }
   }
 
+  /** The author rewrites a message. Returns a French error message, or `null` on success. */
+  async editMessage(message: MessageDto, content: string): Promise<string | null> {
+    const token = session.token;
+    if (!token) return errorMessage(null);
+    try {
+      const { message: updated } = await api.editMessage(
+        session.serverUrl,
+        token,
+        message.channelId,
+        message.id,
+        content,
+      );
+      this.#dispatch(updated.channelId, { kind: 'upsert', message: updated });
+      return null;
+    } catch (error) {
+      return errorMessage(error);
+    }
+  }
+
+  /** The author deletes a message. Returns a French error message, or `null` on success. */
+  async deleteMessage(message: MessageDto): Promise<string | null> {
+    const token = session.token;
+    if (!token) return errorMessage(null);
+    try {
+      await api.deleteMessage(session.serverUrl, token, message.channelId, message.id);
+      this.#dispatch(message.channelId, { kind: 'remove', id: message.id });
+      return null;
+    } catch (error) {
+      return errorMessage(error);
+    }
+  }
+
   /** Returns a French error message, or `null` when the channel was created. */
   async createChannel(name: string, description: string): Promise<string | null> {
     const token = session.token;
@@ -210,29 +301,142 @@ class Chat {
     );
   }
 
-  #receive(message: MessageDto): void {
-    const history = this.histories[message.channelId];
-    if (!history) return; // Channel never opened: its history is fetched when it is.
-    if (history.loading) {
-      const queue = this.#pending.get(message.channelId) ?? [];
-      queue.push(message);
-      this.#pending.set(message.channelId, queue);
-      return;
-    }
-    history.messages = mergeMessages(history.messages, [message]);
+  /** Names of the people currently typing in a channel (never the signed-in user). */
+  typingUsers(channelId: string): string[] {
+    return Object.values(this.typing[channelId] ?? {});
   }
 
-  /** After a reconnection, refetch the latest page of the open channel to close the gap. */
-  async #resync(): Promise<void> {
-    const token = session.token;
+  /** Called as the user types: tells the channel, at most once every few seconds. */
+  notifyTyping(channelId: string): void {
+    const now = Date.now();
+    if (now - (this.#typingSentAt.get(channelId) ?? 0) < TYPING_SEND_INTERVAL_MS) return;
+    this.#typingSentAt.set(channelId, now);
+    this.#realtime?.sendTyping(channelId);
+  }
+
+  #onTyping({ channelId, user }: UserTypingEvent): void {
+    if (user.id === session.user?.id) return;
+    (this.typing[channelId] ??= {})[user.id] = user.username;
+    const key = `${channelId}:${user.id}`;
+    clearTimeout(this.#typingTimers.get(key));
+    this.#typingTimers.set(
+      key,
+      setTimeout(() => this.#clearTyping(channelId, user.id), TYPING_EXPIRES_MS),
+    );
+  }
+
+  #clearTyping(channelId: string, userId: string): void {
+    const key = `${channelId}:${userId}`;
+    clearTimeout(this.#typingTimers.get(key));
+    this.#typingTimers.delete(key);
+    const users = this.typing[channelId];
+    if (users) delete users[userId];
+  }
+
+  /** A new message: someone who sends a message has stopped typing; others' messages count. */
+  #receive(message: MessageDto): void {
+    this.#clearTyping(message.channelId, message.author.id);
+    if (message.author.id !== session.user?.id) this.#countAndNotify(message);
+    this.#dispatch(message.channelId, { kind: 'upsert', message });
+    if (message.channelId === this.activeChannelId) this.#maybeMarkRead();
+  }
+
+  #countAndNotify(message: MessageDto): void {
+    const beingRead =
+      message.channelId === this.activeChannelId && this.windowFocused && this.atBottom;
+    if (!beingRead) {
+      this.unread[message.channelId] = (this.unread[message.channelId] ?? 0) + 1;
+    }
+    if (!this.windowFocused) {
+      const channel = this.channels.find((candidate) => candidate.id === message.channelId);
+      const where = channel ? `#${channel.name}` : 'Percival';
+      void showNotification(
+        `${where} · ${message.author.username}`,
+        notificationBody(message.content),
+      );
+    }
+  }
+
+  /** Applies a change to a channel's history, or queues it while that history is being fetched. */
+  #dispatch(channelId: string, event: HistoryEvent): void {
+    const queue = this.#pending.get(channelId);
+    if (queue) {
+      queue.push(event);
+      return;
+    }
+    const history = this.histories[channelId];
+    if (!history) return; // Channel never opened: its history is fetched when it is.
+    history.messages = applyEvents(history.messages, [event]);
+  }
+
+  /**
+   * Reports the open channel as read once it is really being read: the window is in the
+   * foreground and the list shows the newest message.
+   */
+  #maybeMarkRead(): void {
     const channelId = this.activeChannelId;
-    const history = channelId ? this.histories[channelId] : undefined;
-    if (!token || !channelId || !history) return;
+    const token = session.token;
+    if (!channelId || !token || !this.windowFocused || !this.atBottom) return;
+    if (this.#pending.has(channelId)) return; // Called again when the history has loaded.
+    const last = this.histories[channelId]?.messages.at(-1);
+    if (!last) return;
+
+    const hadUnread = (this.unread[channelId] ?? 0) > 0;
+    if (hadUnread) delete this.unread[channelId];
+    if (!hadUnread && this.#markedRead.get(channelId) === last.id) return;
+
+    this.#markedRead.set(channelId, last.id);
+    api.markChannelRead(session.serverUrl, token, channelId, last.id).catch(() => {
+      // Tried again the next time the channel is read.
+      if (this.#markedRead.get(channelId) === last.id) this.#markedRead.delete(channelId);
+    });
+  }
+
+  /**
+   * After a reconnection, events may have been missed: refetch the channel list (new channels,
+   * unread counters) and the latest page of every channel already opened, which also picks up
+   * edits and deletions.
+   */
+  async #resync(): Promise<void> {
+    await Promise.all([
+      this.#refreshChannels(),
+      ...Object.keys(this.histories).map((channelId) => this.#refreshHistory(channelId)),
+    ]);
+    this.#maybeMarkRead();
+  }
+
+  async #refreshChannels(): Promise<void> {
+    const token = session.token;
+    if (!token) return;
+    try {
+      const { channels, unread } = await api.listChannels(session.serverUrl, token);
+      for (const channel of channels) this.#addChannel(channel);
+      this.unread = unread ?? {};
+    } catch {
+      // The next reconnection will try again.
+    }
+  }
+
+  async #refreshHistory(channelId: string): Promise<void> {
+    const token = session.token;
+    const history = this.histories[channelId];
+    if (!token || !history || history.loading || this.#pending.has(channelId)) return;
+    this.#pending.set(channelId, []);
     try {
       const page = await api.fetchMessages(session.serverUrl, token, channelId);
-      history.messages = mergeMessages(history.messages, page.messages);
+      const current = this.histories[channelId];
+      if (current) {
+        const merged = reconcileLatestPage(
+          { messages: current.messages, nextBefore: current.nextBefore },
+          page,
+        );
+        current.messages = applyEvents(merged.messages, this.#pending.get(channelId) ?? []);
+        current.nextBefore = merged.nextBefore;
+      }
     } catch {
       // The next reconnection or channel switch will try again.
+    } finally {
+      this.#pending.delete(channelId);
     }
   }
 }

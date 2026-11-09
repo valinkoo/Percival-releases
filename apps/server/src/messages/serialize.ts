@@ -11,6 +11,7 @@ export interface MessageWithAuthor {
   content: string;
   createdAt: Date;
   updatedAt: Date;
+  editedAt: Date | null;
   user: { id: string; username: string; isBot: boolean };
 }
 
@@ -26,5 +27,6 @@ export function toMessageDto(message: MessageWithAuthor): MessageDto {
     content: message.content,
     createdAt: message.createdAt.toISOString(),
     updatedAt: message.updatedAt.toISOString(),
+    editedAt: message.editedAt?.toISOString() ?? null,
   };
 }
