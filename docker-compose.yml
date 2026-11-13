@@ -45,6 +45,10 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Uploaded files live in the `uploads` volume (back it up together with `pgdata`).
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     ports:
       - '127.0.0.1:${API_PORT:-3000}:3000'
     healthcheck:
@@ -60,3 +64,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

@@ -41,6 +41,11 @@ COPY --from=build /repo/apps/server/dist apps/server/dist
 COPY apps/server/prisma apps/server/prisma
 COPY apps/server/prisma.config.ts apps/server/
 
+# Uploaded files. The directory is created here, owned by the unprivileged user, so that the
+# named volume mounted on it (docker-compose.yml) starts out writable by that user.
+RUN mkdir -p /data/uploads && chown node:node /data/uploads
+ENV UPLOADS_DIR=/data/uploads
+
 USER node
 WORKDIR /repo/apps/server
 EXPOSE 3000

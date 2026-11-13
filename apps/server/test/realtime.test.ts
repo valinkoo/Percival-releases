@@ -15,6 +15,7 @@ import {
   tokenFor,
   type TestContext,
 } from './helpers/app.js';
+import { multipartBody, PDF } from './helpers/files.js';
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -129,6 +130,28 @@ describe('realtime', () => {
         author: { username: 'member' },
       });
     }
+  });
+
+  it('delivers a message together with its attachments', async () => {
+    const memberSocket = await connect(member.token);
+    const { messages } = listen(memberSocket);
+
+    const { payload, headers } = await multipartBody({ content: 'le plan' }, [
+      { name: 'plan.pdf', data: PDF },
+    ]);
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/channels/${generalId}/messages`,
+      headers: { ...headers, ...authHeader(admin.token) },
+      payload,
+    });
+    expect(response.statusCode).toBe(201);
+    await waitFor(() => messages.length > 0);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.attachments).toMatchObject([
+      { fileName: 'plan.pdf', fileType: 'application/pdf', fileSize: PDF.length },
+    ]);
   });
 
   it('does not deliver messages of channels the user cannot see', async () => {

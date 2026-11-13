@@ -5,6 +5,7 @@ import {
   type MessageDto,
   type MessagesPageResponse,
 } from '@percival/shared';
+import type { StoredFile } from '../attachments/storage.js';
 import { findAccessibleChannel } from '../channels/access.js';
 import type { PrismaClient } from '../db.js';
 import { AppError } from '../errors.js';
@@ -17,23 +18,39 @@ interface Deps {
   realtime: Realtime;
 }
 
-function channelNotFound(): AppError {
+export function channelNotFound(): AppError {
   // Same answer whether the channel does not exist or is not visible to the account.
   return new AppError(404, 'not_found', 'Channel not found');
 }
 
-/** Stores a message and pushes it to everyone who can see the channel. */
+/**
+ * Stores a message and pushes it to everyone who can see the channel. The files, already written
+ * to disk by the caller, are linked to it in the same insert; a message needs text or a file.
+ */
 export async function postMessage(
   { prisma, realtime }: Deps,
   account: Account,
   channelId: string,
   content: string,
+  files: readonly StoredFile[] = [],
 ): Promise<MessageDto> {
   if (!(await findAccessibleChannel(prisma, account, channelId))) {
     throw channelNotFound();
   }
+  if (content.trim() === '' && files.length === 0) {
+    throw new AppError(400, 'invalid_request', 'A message needs text or a file');
+  }
+  const uploadedAt = Date.now();
   const row = await prisma.message.create({
-    data: { channelId, userId: account.id, content },
+    data: {
+      channelId,
+      userId: account.id,
+      content,
+      attachments: {
+        // One millisecond apart: the upload order is what the history sorts by.
+        create: files.map((file, index) => ({ ...file, createdAt: new Date(uploadedAt + index) })),
+      },
+    },
     include: messageInclude,
   });
   const message = toMessageDto(row);
@@ -78,6 +95,9 @@ export async function editMessage(
   const current = await findOwnableMessage(prisma, account, channelId, messageId);
   if (current.userId !== account.id) {
     throw new AppError(403, 'forbidden', 'You can only edit your own messages');
+  }
+  if (content.trim() === '' && current.attachments.length === 0) {
+    throw new AppError(400, 'invalid_request', 'content: must not be empty');
   }
   if (current.content === content) {
     return toMessageDto(current); // Nothing changed: no "edited" mark, nothing to broadcast.

@@ -1,3 +1,4 @@
+export * from './attachments.js';
 export * from './auth.js';
 export * from './channels.js';
 export * from './errors.js';

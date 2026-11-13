@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { notificationBody, plainText, showNotification } from './notify';
+import { attachmentSummary, notificationBody, plainText, showNotification } from './notify';
 
 describe('plainText', () => {
   it('drops emphasis, code and heading markers', () => {
@@ -34,6 +34,22 @@ describe('notificationBody', () => {
     const body = notificationBody('mot '.repeat(100), 40);
     expect(body.length).toBeLessThanOrEqual(40);
     expect(body.endsWith('…')).toBe(true);
+  });
+});
+
+describe('attachmentSummary', () => {
+  it('names a single file', () => {
+    expect(attachmentSummary([{ fileName: 'rapport.pdf' }])).toBe('📎 rapport.pdf');
+  });
+
+  it('counts several files', () => {
+    expect(attachmentSummary([{ fileName: 'a.png' }, { fileName: 'b.png' }])).toBe(
+      '📎 2 fichiers joints',
+    );
+  });
+
+  it('is empty when there is no file', () => {
+    expect(attachmentSummary([])).toBe('');
   });
 });
 

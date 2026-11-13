@@ -8,7 +8,7 @@ import {
 import * as api from './api';
 import { applyEvents, mergeMessages, reconcileLatestPage, type HistoryEvent } from './history';
 import { errorMessage } from './messages';
-import { notificationBody, showNotification } from './notify';
+import { attachmentSummary, notificationBody, showNotification } from './notify';
 import { connectRealtime, type ConnectionState, type RealtimeConnection } from './realtime';
 import { session } from './session.svelte';
 
@@ -233,11 +233,21 @@ class Chat {
   }
 
   /** Returns a French error message, or `null` when the message was sent. */
-  async send(channelId: string, content: string): Promise<string | null> {
+  async send(
+    channelId: string,
+    content: string,
+    files: readonly File[] = [],
+  ): Promise<string | null> {
     const token = session.token;
     if (!token) return errorMessage(null);
     try {
-      const { message } = await api.sendMessage(session.serverUrl, token, channelId, content);
+      const { message } = await api.sendMessage(
+        session.serverUrl,
+        token,
+        channelId,
+        content,
+        files,
+      );
       this.#receive(message);
       return null;
     } catch (error) {
@@ -352,7 +362,7 @@ class Chat {
       const where = channel ? `#${channel.name}` : 'Percival';
       void showNotification(
         `${where} · ${message.author.username}`,
-        notificationBody(message.content),
+        notificationBody(message.content) || attachmentSummary(message.attachments ?? []),
       );
     }
   }

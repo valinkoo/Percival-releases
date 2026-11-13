@@ -28,6 +28,10 @@ function codeForStatus(status: number): ErrorCode {
       return 'not_found';
     case 409:
       return 'conflict';
+    case 413:
+      return 'payload_too_large';
+    case 415:
+      return 'unsupported_type';
     case 429:
       return 'rate_limited';
     default:

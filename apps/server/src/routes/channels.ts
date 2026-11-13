@@ -10,11 +10,14 @@ import type {
 import { MESSAGES_PAGE_DEFAULT, MESSAGES_PAGE_MAX, MESSAGE_MAX_LENGTH } from '@percival/shared';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { listAccessibleChannels } from '../channels/access.js';
+import { removeUploads } from '../attachments/storage.js';
+import { findAccessibleChannel, listAccessibleChannels } from '../channels/access.js';
 import { toChannelDto } from '../channels/serialize.js';
 import { channelDescriptionSchema, channelNameSchema } from '../channels/validation.js';
 import { AppError } from '../errors.js';
+import { readMessageForm } from '../messages/form.js';
 import {
+  channelNotFound,
   countUnread,
   deleteMessage,
   editMessage,
@@ -32,15 +35,22 @@ const createChannelBodySchema = z.object({
   description: channelDescriptionSchema.optional(),
 });
 
-/** Sending and editing share the same rules for the text. */
-const messageBodySchema = z.object({
-  content: z
-    .string()
-    .max(MESSAGE_MAX_LENGTH)
-    .refine((value) => value.trim() !== '', 'must not be empty')
-    // Trailing blank space is noise; leading spaces can matter in Markdown (indented code).
-    .transform((value) => value.trimEnd()),
+/** Trailing blank space is noise; leading spaces can matter in Markdown (indented code). */
+const messageText = z
+  .string()
+  .max(MESSAGE_MAX_LENGTH)
+  .transform((value) => value.trimEnd());
+
+/** A text-only message must have text. (With files, the text is optional: see the form route.) */
+const sendBodySchema = z.object({
+  content: messageText.refine((value) => value !== '', 'must not be empty'),
 });
+
+/**
+ * Editing may leave the text empty: the service refuses it unless the message has files, which
+ * then stand on their own.
+ */
+const editBodySchema = z.object({ content: messageText });
 
 const markReadBodySchema = z.object({ messageId: z.uuid() });
 
@@ -98,10 +108,34 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply): Promise<SendMessageResponse> => {
       const { channelId } = channelParamsSchema.parse(request.params);
-      const { content } = messageBodySchema.parse(request.body);
-      const message = await postMessage(app, request.account, channelId, content);
-      reply.status(201);
-      return { message };
+
+      if (!request.isMultipart()) {
+        const { content } = sendBodySchema.parse(request.body);
+        const message = await postMessage(app, request.account, channelId, content);
+        reply.status(201);
+        return { message };
+      }
+
+      // Message with files. Access is checked first: nothing is written for a channel the
+      // account cannot see.
+      if (!(await findAccessibleChannel(app.prisma, request.account, channelId))) {
+        throw channelNotFound();
+      }
+      const form = await readMessageForm(request, app.config.UPLOADS_DIR);
+      try {
+        const message = await postMessage(
+          app,
+          request.account,
+          channelId,
+          form.content,
+          form.files,
+        );
+        reply.status(201);
+        return { message };
+      } catch (error) {
+        await removeUploads(app.config.UPLOADS_DIR, form.files);
+        throw error;
+      }
     },
   );
 
@@ -110,7 +144,7 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request): Promise<EditMessageResponse> => {
       const { channelId, messageId } = messageParamsSchema.parse(request.params);
-      const { content } = messageBodySchema.parse(request.body);
+      const { content } = editBodySchema.parse(request.body);
       const message = await editMessage(app, request.account, channelId, messageId, content);
       return { message };
     },

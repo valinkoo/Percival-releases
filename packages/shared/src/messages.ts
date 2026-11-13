@@ -1,3 +1,5 @@
+import type { AttachmentDto } from './attachments.js';
+
 export interface MessageAuthorDto {
   id: string;
   username: string;
@@ -8,8 +10,10 @@ export interface MessageDto {
   id: string;
   channelId: string;
   author: MessageAuthorDto;
-  /** Markdown source. The client sanitizes it when rendering. */
+  /** Markdown source. The client sanitizes it when rendering. Empty for a message made of files. */
   content: string;
+  /** Files attached to the message, in upload order. Empty when there are none. */
+  attachments: AttachmentDto[];
   /** ISO 8601 timestamps. */
   createdAt: string;
   updatedAt: string;
@@ -17,6 +21,10 @@ export interface MessageDto {
   editedAt: string | null;
 }
 
+/**
+ * A text-only message is sent as JSON. A message with files is sent as `multipart/form-data`: a
+ * `content` field (optional when there is at least one file) and one `files` part per file.
+ */
 export interface SendMessageRequest {
   content: string;
 }

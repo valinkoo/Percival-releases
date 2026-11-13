@@ -19,6 +19,15 @@ export function notificationBody(markdown: string, max = 140): string {
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
+/** What a message made of files says in a notification: the file name, or how many files. */
+export function attachmentSummary(attachments: readonly { fileName: string }[]): string {
+  const [first] = attachments;
+  if (!first) return '';
+  return attachments.length === 1
+    ? `📎 ${first.fileName}`
+    : `📎 ${attachments.length} fichiers joints`;
+}
+
 /**
  * Shows a native Windows notification. Does nothing outside the Tauri shell, and never throws:
  * a missing permission or a notification failure must not disturb the chat.

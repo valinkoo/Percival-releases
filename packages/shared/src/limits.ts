@@ -12,6 +12,11 @@ export const MESSAGE_MAX_LENGTH = 4000;
 export const MESSAGES_PAGE_DEFAULT = 50;
 export const MESSAGES_PAGE_MAX = 100;
 
+/** Attachments: 25 MB per file (DAT), a handful per message. */
+export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+export const ATTACHMENTS_PER_MESSAGE_MAX = 5;
+export const ATTACHMENT_NAME_MAX_LENGTH = 200;
+
 export const PASSWORD_MIN_LENGTH = 10;
 /** Upper bound that keeps argon2 from being used as a CPU denial of service. */
 export const PASSWORD_MAX_LENGTH = 128;

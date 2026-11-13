@@ -4,6 +4,7 @@
 **/target
 **/.svelte-kit
 .git
+**/uploads
 .env
 .env.*
 !.env.example
