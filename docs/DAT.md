@@ -76,6 +76,7 @@ Décisions prises avec le propriétaire du projet avant le début du développem
 - Tables ajoutées : `channel_members` (salons privés et invités), `access_tokens` (jetons des bots, stockés hachés), `webhooks` (jeton haché, salon cible, bot associé).
 - `messages` reçoit un champ `deleted_at` (suppression logique) et, depuis la v0.0.3, `edited_at` (date de la dernière modification par l'auteur).
 - Depuis la v0.0.3, la table `channel_reads` (utilisateur, salon, date de dernière lecture) mémorise ce que chacun a lu : les messages non lus sont comptés par le serveur, pas par le client.
+- `attachments` reçoit `file_name` (nom d'origine, nettoyé par le serveur) et `created_at` en plus des colonnes du MCD.
 - Les rôles sont **globaux uniquement**, sans droits par salon.
 
 ### Messages (v0.0.3)
@@ -83,6 +84,17 @@ Décisions prises avec le propriétaire du projet avant le début du développem
 - Seul l'auteur modifie ou supprime son message. La modération par les rôles Admin et Modo viendra avec la v0.0.5.
 - Événements temps réel : `message_updated` (message complet), `message_deleted` (identifiants), `user_typing` (relayé aux autres membres du salon, jamais à l'émetteur ; le client l'émet au plus toutes les 3 s, l'indicateur disparaît après 5 s).
 - Après une coupure, le client récupère les messages manqués, les modifications et les suppressions par l'API REST (dernière page de chaque salon déjà ouvert).
+
+### Fichiers joints (v0.0.4)
+
+- **Envoi :** un message avec fichiers est envoyé en `multipart/form-data` sur la route d'envoi habituelle (`POST /api/channels/:id/messages`) : un champ `content` (facultatif s'il y a au moins un fichier) et une partie `files` par fichier. Le texte seul reste en JSON. Au plus 5 fichiers par message, 25 Mo par fichier ; au-delà, le serveur répond 413 (`payload_too_large`).
+- **Écart avec le texte initial :** les uploads passent par `@fastify/multipart`, pas par `multer`, qui est un middleware Express et ne fonctionne pas avec Fastify. Le comportement attendu est le même (écriture physique sur le serveur et création de l'entrée dans `attachments`).
+- **Stockage :** les fichiers sont écrits dans le répertoire `UPLOADS_DIR` (le volume Docker `uploads`), sous un nom généré par le serveur (`AAAA/MM/<uuid>`). Ni le nom ni le type annoncés par le client n'entrent dans le chemin. Un message refusé ou en erreur ne laisse aucun fichier derrière lui.
+- **Types acceptés (liste blanche) :** le type est déterminé par le serveur d'après le **contenu** du fichier (signature binaire), jamais d'après le type annoncé : un programme renommé `photo.png` est refusé. Seuls les formats texte (`.txt`, `.md`, `.csv`, `.json`, `.log`) sont reconnus par leur extension, à condition que le contenu soit bien du texte UTF-8. Liste : images PNG, JPEG, GIF, WebP ; PDF ; texte, Markdown, CSV, JSON ; Word, Excel, PowerPoint (`.docx`, `.xlsx`, `.pptx`) et OpenDocument (`.odt`, `.ods`, `.odp`) ; archives ZIP et 7z ; audio MP3, OGG, WAV, FLAC ; vidéo MP4, WebM, QuickTime. Refusés (415, `unsupported_type`) : programmes, scripts, SVG et HTML (ils peuvent exécuter du code), anciens formats Office (macros). La liste vit dans `apps/server/src/attachments/types.ts`.
+- **Téléchargement :** `GET /api/attachments/:id`, authentifié par le jeton comme le reste de l'API. Le fichier n'est servi qu'à qui peut voir le salon du message, et plus une fois le message supprimé : dans les deux cas la réponse est la même 404. Réponse en `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` et `Cache-Control: private, no-store`.
+- **Affichage :** les images PNG, JPEG, GIF et WebP sont affichées dans le message (récupérées avec le jeton, au moment où elles entrent dans l'écran, puis montrées via une URL locale `blob:`) ; un clic les ouvre en plein écran. Les autres fichiers apparaissent comme une carte (nom, type, taille) avec un bouton « Télécharger ». Le serveur ne génère pas de miniatures : c'est l'image d'origine qui est chargée.
+- **Messages :** un message peut ne contenir que des fichiers (texte vide). Modifier un message conserve ses fichiers ; son texte peut alors être vidé. Supprimer un message (suppression logique) rend ses fichiers inaccessibles, mais ils restent sur le disque (archive) : aucune purge automatique en v1.
+- **Sauvegardes :** le volume `uploads` est à sauvegarder avec la base PostgreSQL (v0.0.7).
 
 ### Comptes
 

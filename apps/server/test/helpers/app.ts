@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { RoleName } from '@percival/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
@@ -19,11 +22,14 @@ export interface TestContext {
 export async function createTestContext(
   overrides: Record<string, string> = {},
 ): Promise<TestContext> {
+  // Uploaded files go to a throwaway directory, deleted when the context closes.
+  const uploadsDir = await mkdtemp(path.join(tmpdir(), 'percival-uploads-'));
   const config = loadConfig({
     NODE_ENV: 'test',
     LOG_LEVEL: 'silent',
     DATABASE_URL: testDatabaseUrl(),
     JWT_SECRET: 'test-secret-test-secret-test-secret-123456',
+    UPLOADS_DIR: uploadsDir,
     ...overrides,
   });
   const prisma = createPrismaClient(config.DATABASE_URL);
@@ -37,6 +43,7 @@ export async function createTestContext(
     async close() {
       await app.close();
       await prisma.$disconnect();
+      await rm(uploadsDir, { recursive: true, force: true });
     },
   };
 }
