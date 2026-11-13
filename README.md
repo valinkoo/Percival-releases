@@ -4,7 +4,7 @@ Messagerie de bureau locale, auto-hébergée et structurée en salons : une alte
 
 Percival est le socle d'un futur écosystème logiciel, avec une intégration prévue avec 4Elements.
 
-> **État :** v0.0.3 validée (salons, messages en temps réel, Markdown sécurisé, modification et suppression de ses messages, indicateur de frappe, messages non lus, notifications Windows, rattrapage après une coupure, fenêtre Paramètres avec thème et mises à jour), avec installateur Windows et mises à jour automatiques.
+> **État :** v0.0.4 validée (salons, messages en temps réel, Markdown sécurisé, modification et suppression de ses messages, indicateur de frappe, messages non lus, notifications Windows, rattrapage après une coupure, fenêtre Paramètres avec thème et mises à jour, fichiers joints avec aperçu des images et téléchargement), avec installateur Windows et mises à jour automatiques.
 
 ## Stack
 
@@ -45,18 +45,18 @@ pnpm dev:desktop              # lance le client Tauri
 
 Autres commandes utiles :
 
-| Commande                          | Rôle                                                  |
-| --------------------------------- | ----------------------------------------------------- |
-| `pnpm build`                      | compile les types partagés, le serveur et l'interface |
-| `pnpm typecheck`                  | vérifie les types de tout le monorepo                 |
-| `pnpm lint` / `pnpm format:check` | ESLint et Prettier                                    |
-| `pnpm test`                       | tests du serveur et du client (voir ci-dessous)       |
-| `docker compose up -d db`         | PostgreSQL seul, pour lancer l'API à la main          |
-| `pnpm dev:server`                 | API sur l'hôte (utilise `DATABASE_URL` de `.env`)     |
-| `docker compose logs -f api`      | logs de l'API                                         |
-| `docker compose down`             | arrête la pile (`-v` efface aussi la base de données) |
+| Commande                          | Rôle                                                     |
+| --------------------------------- | -------------------------------------------------------- |
+| `pnpm build`                      | compile les types partagés, le serveur et l'interface    |
+| `pnpm typecheck`                  | vérifie les types de tout le monorepo                    |
+| `pnpm lint` / `pnpm format:check` | ESLint et Prettier                                       |
+| `pnpm test`                       | tests du serveur et du client (voir ci-dessous)          |
+| `docker compose up -d db`         | PostgreSQL seul, pour lancer l'API à la main             |
+| `pnpm dev:server`                 | API sur l'hôte (utilise `DATABASE_URL` de `.env`)        |
+| `docker compose logs -f api`      | logs de l'API                                            |
+| `docker compose down`             | arrête la pile (`-v` efface base **et fichiers joints**) |
 
-**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur, la gestion des erreurs de l'API, la remise à jour de l'historique après une coupure, les notifications, le thème et les mises à jour.
+**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du serveur vérifient aussi les fichiers joints (types refusés d'après le contenu, taille, droits d'accès au téléchargement). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur, la gestion des erreurs de l'API, la remise à jour de l'historique après une coupure, les notifications, le thème, les mises à jour et la préparation des fichiers à envoyer.
 
 Le client n'accepte que `localhost` ou une adresse Tailscale (`*.ts.net`, en HTTPS) comme adresse de serveur : c'est volontaire, la politique de sécurité (CSP) de l'application l'impose.
 
