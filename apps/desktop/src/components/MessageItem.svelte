@@ -3,6 +3,7 @@
   import { chat } from '../lib/chat.svelte';
   import { formatFullDate, formatTimestamp } from '../lib/format';
   import { session } from '../lib/session.svelte';
+  import AttachmentList from './AttachmentList.svelte';
   import MarkdownContent from './MarkdownContent.svelte';
 
   let { message, showHeader }: { message: MessageDto; showHeader: boolean } = $props();
@@ -17,8 +18,12 @@
   let error = $state<string | null>(null);
   let field = $state<HTMLTextAreaElement>();
 
+  // A server that predates attachments sends none: the app updates itself before the server does.
+  const attachments = $derived(message.attachments ?? []);
+
   const tooLong = $derived(draft.length > MESSAGE_MAX_LENGTH);
-  const canSave = $derived(draft.trim() !== '' && !tooLong && !busy);
+  // The text may be emptied when files remain: they stand on their own.
+  const canSave = $derived((draft.trim() !== '' || attachments.length > 0) && !tooLong && !busy);
 
   function startEdit() {
     draft = message.content;
@@ -124,7 +129,10 @@
       </div>
     </div>
   {:else}
-    <MarkdownContent source={message.content} />
+    {#if message.content !== ''}
+      <MarkdownContent source={message.content} />
+    {/if}
+    <AttachmentList {attachments} />
     {#if message.editedAt}
       <span class="edited" title={`Modifié le ${formatFullDate(message.editedAt)}`}>(modifié)</span>
     {/if}

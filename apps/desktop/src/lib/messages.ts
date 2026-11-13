@@ -12,6 +12,9 @@ const MESSAGES: Record<ApiErrorCode, string> = {
   forbidden: "Vous n'avez pas le droit d'effectuer cette action.",
   not_found: 'Ressource introuvable.',
   conflict: 'Un salon porte déjà ce nom.',
+  payload_too_large: 'Fichier trop volumineux (25 Mo maximum par fichier, 5 fichiers par message).',
+  unsupported_type:
+    "Ce type de fichier n'est pas accepté (images, PDF, documents, archives, audio et vidéo).",
   rate_limited: 'Trop de tentatives. Réessayez dans une minute.',
   internal_error: 'Erreur du serveur. Réessayez plus tard.',
 };

@@ -17,6 +17,9 @@ import {
 } from '@percival/shared';
 
 const REQUEST_TIMEOUT_MS = 10_000;
+/** Sending files (up to 5 x 25 MB) and fetching one take far longer than a JSON request. */
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
+const DOWNLOAD_TIMEOUT_MS = 2 * 60_000;
 
 /**
  * Client-side codes added to the API's own error codes:
@@ -49,14 +52,26 @@ export function onUnauthorized(handler: () => void): void {
   unauthorizedHandler = handler;
 }
 
+/** The error for a non-2xx answer, whose body (already read) may carry a Percival error code. */
+function errorFor(response: Response, payload: unknown, token?: string): ApiError {
+  const code = (payload as Partial<ApiErrorBody> | null)?.error?.code;
+  if (isErrorCode(code)) {
+    if (code === 'unauthorized' && token) unauthorizedHandler?.();
+    return new ApiError(code, response.status);
+  }
+  const unreachable = PROXY_UNREACHABLE_STATUSES.has(response.status);
+  return new ApiError(unreachable ? 'network' : 'invalid_server', response.status);
+}
+
 async function request<T>(
   serverUrl: string,
   path: string,
   init: RequestInit = {},
   token?: string,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -78,13 +93,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    const code = (payload as Partial<ApiErrorBody> | null)?.error?.code;
-    if (isErrorCode(code)) {
-      if (code === 'unauthorized' && token) unauthorizedHandler?.();
-      throw new ApiError(code, response.status);
-    }
-    const unreachable = PROXY_UNREACHABLE_STATUSES.has(response.status);
-    throw new ApiError(unreachable ? 'network' : 'invalid_server', response.status);
+    throw errorFor(response, payload, token);
   }
   // A successful answer must be a JSON object, otherwise this is not the Percival API
   // (for example a web page served at that address).
@@ -137,18 +146,67 @@ export function fetchMessages(
   );
 }
 
+/**
+ * Sends a message. Text alone goes as JSON; with files it becomes `multipart/form-data`, where the
+ * `content` field comes before the `files` parts (the server needs no particular order, but it is
+ * the natural one). No `Content-Type` is set for the form: the browser adds the boundary itself.
+ */
 export function sendMessage(
   serverUrl: string,
   token: string,
   channelId: string,
   content: string,
+  files: readonly File[] = [],
 ): Promise<SendMessageResponse> {
+  const path = `/api/channels/${encodeURIComponent(channelId)}/messages`;
+  if (files.length === 0) {
+    return request<SendMessageResponse>(serverUrl, path, jsonBody({ content }), token);
+  }
+  const form = new FormData();
+  form.append('content', content);
+  for (const file of files) form.append('files', file, file.name);
   return request<SendMessageResponse>(
     serverUrl,
-    `/api/channels/${encodeURIComponent(channelId)}/messages`,
-    jsonBody({ content }),
+    path,
+    { method: 'POST', body: form },
     token,
+    UPLOAD_TIMEOUT_MS,
   );
+}
+
+/**
+ * The bytes of an attachment. The token travels in a header, so the file cannot be handed to an
+ * `<img>` or a link directly: the caller turns the blob into an object URL or saves it.
+ */
+export async function fetchAttachment(
+  serverUrl: string,
+  token: string,
+  attachmentId: string,
+): Promise<Blob> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`${serverUrl}/api/attachments/${encodeURIComponent(attachmentId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+    } catch {
+      throw new ApiError('network', 0);
+    }
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      throw errorFor(response, payload, token);
+    }
+    try {
+      return await response.blob();
+    } catch {
+      throw new ApiError('network', 0); // The connection dropped in the middle of the file.
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function editMessage(

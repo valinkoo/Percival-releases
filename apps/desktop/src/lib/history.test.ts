@@ -16,6 +16,7 @@ function m(n: number, content = `message ${n}`): MessageDto {
     channelId: 'channel',
     author: { id: 'author', username: 'alice', isBot: false },
     content,
+    attachments: [],
     createdAt: `2026-11-09T10:00:${second}.000Z`,
     updatedAt: `2026-11-09T10:00:${second}.000Z`,
     editedAt: null,

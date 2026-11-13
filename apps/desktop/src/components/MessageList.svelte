@@ -11,6 +11,7 @@
   const NEAR_TOP_PX = 40;
 
   let container = $state<HTMLDivElement>();
+  let content = $state<HTMLDivElement>();
   let pinnedToBottom = true;
   let displayedChannel: string | undefined;
 
@@ -44,6 +45,17 @@
     if (pinnedToBottom) scrollToBottom();
   });
 
+  // Pictures load after their message is displayed and make the list taller: stay on the newest
+  // message when that happens, as long as the reader has not scrolled away.
+  $effect(() => {
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedToBottom) scrollToBottom();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  });
+
   async function loadOlder() {
     if (!container || !history?.nextBefore || history.loadingOlder) return;
     const heightBefore = container.scrollHeight;
@@ -68,34 +80,36 @@
 </script>
 
 <div class="messages" bind:this={container} onscroll={handleScroll}>
-  {#if !history || (history.loading && history.messages.length === 0)}
-    <p class="state">Chargement des messages…</p>
-  {:else if history.error && history.messages.length === 0}
-    <div class="state">
-      <p role="alert">{history.error}</p>
-      <button type="button" onclick={() => chat.retryHistory(channelId)}>Réessayer</button>
-    </div>
-  {:else}
-    {#if history.nextBefore}
-      <button type="button" class="older" onclick={loadOlder} disabled={history.loadingOlder}>
-        {history.loadingOlder ? 'Chargement…' : 'Charger les messages précédents'}
-      </button>
-    {:else if history.messages.length > 0}
-      <p class="beginning">Début du salon</p>
-    {/if}
+  <div class="content" bind:this={content}>
+    {#if !history || (history.loading && history.messages.length === 0)}
+      <p class="state">Chargement des messages…</p>
+    {:else if history.error && history.messages.length === 0}
+      <div class="state">
+        <p role="alert">{history.error}</p>
+        <button type="button" onclick={() => chat.retryHistory(channelId)}>Réessayer</button>
+      </div>
+    {:else}
+      {#if history.nextBefore}
+        <button type="button" class="older" onclick={loadOlder} disabled={history.loadingOlder}>
+          {history.loadingOlder ? 'Chargement…' : 'Charger les messages précédents'}
+        </button>
+      {:else if history.messages.length > 0}
+        <p class="beginning">Début du salon</p>
+      {/if}
 
-    {#if history.error}
-      <p class="inline-error" role="alert">{history.error}</p>
-    {/if}
+      {#if history.error}
+        <p class="inline-error" role="alert">{history.error}</p>
+      {/if}
 
-    {#if history.messages.length === 0}
-      <p class="state">Aucun message pour l'instant. Écrivez le premier !</p>
-    {/if}
+      {#if history.messages.length === 0}
+        <p class="state">Aucun message pour l'instant. Écrivez le premier !</p>
+      {/if}
 
-    {#each rows as { message, showHeader } (message.id)}
-      <MessageItem {message} {showHeader} />
-    {/each}
-  {/if}
+      {#each rows as { message, showHeader } (message.id)}
+        <MessageItem {message} {showHeader} />
+      {/each}
+    {/if}
+  </div>
 </div>
 
 <style>
