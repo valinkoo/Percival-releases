@@ -8,7 +8,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   MESSAGE_MAX_LENGTH,
 } from '@percival/shared';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Config } from './config.js';
 import type { PrismaClient } from './db.js';
 import { AppError, registerErrorHandling } from './errors.js';
@@ -17,7 +17,8 @@ import { attachmentRoutes } from './routes/attachments.js';
 import { authRoutes } from './routes/auth.js';
 import { channelRoutes } from './routes/channels.js';
 import { healthRoutes } from './routes/health.js';
-import { loadAccount, type Account } from './users/account.js';
+import { userRoutes } from './routes/users.js';
+import { isRevoked, loadAccountState, type Account } from './users/account.js';
 
 export interface AppDependencies {
   config: Config;
@@ -64,18 +65,37 @@ export async function buildApp({ config, prisma }: AppDependencies): Promise<Fas
     verify: { algorithms: ['HS256'] },
   });
 
-  app.decorate('authenticate', async (request) => {
+  /**
+   * The token must be valid and issued after the account's last revocation, the account must
+   * exist and be enabled. An account with a temporary password may only change it.
+   */
+  async function authenticateRequest(
+    request: FastifyRequest,
+    allowPasswordChange: boolean,
+  ): Promise<void> {
     try {
       await request.jwtVerify();
     } catch {
       throw new AppError(401, 'unauthorized', 'Missing or invalid token');
     }
-    const account = await loadAccount(prisma, request.user.sub);
-    if (!account) {
+    const state = await loadAccountState(prisma, request.user.sub);
+    if (!state) {
       throw new AppError(401, 'unauthorized', 'The account no longer exists');
     }
-    request.account = account;
-  });
+    if (state.disabled) {
+      throw new AppError(403, 'account_disabled', 'This account has been disabled');
+    }
+    if (isRevoked(state, request.user.iat)) {
+      throw new AppError(401, 'unauthorized', 'This session was closed');
+    }
+    if (state.account.mustChangePassword && !allowPasswordChange) {
+      throw new AppError(403, 'password_change_required', 'The password must be changed first');
+    }
+    request.account = state.account;
+  }
+
+  app.decorate('authenticate', (request) => authenticateRequest(request, false));
+  app.decorate('authenticateForPasswordChange', (request) => authenticateRequest(request, true));
 
   const realtime = createRealtime(app);
   app.decorate('realtime', realtime);
@@ -87,6 +107,7 @@ export async function buildApp({ config, prisma }: AppDependencies): Promise<Fas
   await app.register(authRoutes, { prefix: '/api/auth' });
   await app.register(channelRoutes, { prefix: '/api/channels' });
   await app.register(attachmentRoutes, { prefix: '/api/attachments' });
+  await app.register(userRoutes, { prefix: '/api/users' });
 
   return app;
 }

@@ -16,3 +16,12 @@ export interface LoginResponse {
 export interface MeResponse {
   user: UserDto;
 }
+
+/**
+ * Chooses one's own password. The answer is a `LoginResponse`: the other sessions of the account
+ * are closed, so the caller continues with the fresh token it carries.
+ */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}

@@ -1,5 +1,7 @@
 import {
   MESSAGES_PAGE_DEFAULT,
+  hasPermission,
+  outranks,
   type DeleteMessageResponse,
   type MarkChannelReadResponse,
   type MessageDto,
@@ -11,7 +13,7 @@ import type { PrismaClient } from '../db.js';
 import { AppError } from '../errors.js';
 import type { Realtime } from '../realtime/hub.js';
 import type { Account } from '../users/account.js';
-import { messageInclude, toMessageDto } from './serialize.js';
+import { authorRole, messageInclude, toMessageDto } from './serialize.js';
 
 interface Deps {
   prisma: PrismaClient;
@@ -82,8 +84,8 @@ async function findOwnableMessage(
 }
 
 /**
- * The author rewrites their message. Only the author may do it for now: moderation (editing or
- * deleting other people's messages) comes with the roles in v0.0.5.
+ * The author rewrites their message. Only the author may do it: moderators delete messages (see
+ * `deleteMessage`), they do not put words in other people's mouths.
  */
 export async function editMessage(
   { prisma, realtime }: Deps,
@@ -112,7 +114,11 @@ export async function editMessage(
   return message;
 }
 
-/** Soft delete: the message disappears for everyone, the row stays in the archive. */
+/**
+ * Soft delete: the message disappears for everyone, the row stays in the archive. The author may
+ * delete their own message; someone with the right to moderate may delete the messages of anyone
+ * they outrank (never those of an equal or a higher rank).
+ */
 export async function deleteMessage(
   { prisma, realtime }: Deps,
   account: Account,
@@ -121,7 +127,13 @@ export async function deleteMessage(
 ): Promise<DeleteMessageResponse> {
   const current = await findOwnableMessage(prisma, account, channelId, messageId);
   if (current.userId !== account.id) {
-    throw new AppError(403, 'forbidden', 'You can only delete your own messages');
+    const authorRoles = [authorRole(current.user)];
+    if (
+      !hasPermission(account.roles, 'message.moderate') ||
+      !outranks(account.roles, authorRoles)
+    ) {
+      throw new AppError(403, 'forbidden', 'You cannot delete this message');
+    }
   }
   await prisma.message.update({ where: { id: messageId }, data: { deletedAt: new Date() } });
   const result = { id: messageId, channelId };

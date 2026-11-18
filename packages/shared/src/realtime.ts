@@ -1,5 +1,6 @@
 import type { ChannelDto } from './channels.js';
 import type { MessageDto } from './messages.js';
+import type { UserDto } from './users.js';
 
 /** The author of a "typing" signal, as other clients display it. */
 export interface TypingUserDto {
@@ -17,6 +18,10 @@ export interface MessageDeletedEvent {
   channelId: string;
 }
 
+export interface ChannelRemovedEvent {
+  id: string;
+}
+
 /** Events pushed by the server over Socket.io. */
 export interface ServerToClientEvents {
   new_message: (message: MessageDto) => void;
@@ -26,6 +31,12 @@ export interface ServerToClientEvents {
   /** Someone else is typing in a channel. Never sent back to the person typing. */
   user_typing: (event: UserTypingEvent) => void;
   channel_created: (channel: ChannelDto) => void;
+  /** A channel was renamed or its description changed. */
+  channel_updated: (channel: ChannelDto) => void;
+  /** The receiver can no longer see this channel (removed from its members, or role changed). */
+  channel_removed: (event: ChannelRemovedEvent) => void;
+  /** The receiver's own account changed (role, temporary password). */
+  account_updated: (user: UserDto) => void;
 }
 
 /**

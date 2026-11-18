@@ -3,6 +3,10 @@ export const ERROR_CODES = [
   'invalid_credentials',
   'unauthorized',
   'forbidden',
+  /** The account was disabled by an administrator. */
+  'account_disabled',
+  /** The account has a temporary password: only a password change is accepted. */
+  'password_change_required',
   'not_found',
   'conflict',
   'payload_too_large',

@@ -5,12 +5,12 @@
 // - Table and column names are snake_case in the database, camelCase in code.
 
 generator client {
-  provider            = "prisma-client"
-  output              = "../src/generated/prisma"
-  runtime             = "nodejs"
-  moduleFormat        = "esm"
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
   generatedFileExtension = "ts"
-  importFileExtension = "js"
+  importFileExtension    = "js"
 }
 
 datasource db {
@@ -18,12 +18,19 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  username     String   @unique
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  username              String    @unique
   /// argon2id hash. Null for bots, which authenticate with access tokens.
-  passwordHash String?  @map("password_hash")
-  isBot        Boolean  @default(false) @map("is_bot")
-  createdAt    DateTime @default(now()) @map("created_at")
+  passwordHash          String?   @map("password_hash")
+  isBot                 Boolean   @default(false) @map("is_bot")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  /// Set when an administrator disables the account: it cannot sign in and its sessions are closed.
+  disabledAt            DateTime? @map("disabled_at")
+  /// The password is a temporary one (new account, or reset): only a password change is accepted.
+  mustChangePassword    Boolean   @default(false) @map("must_change_password")
+  /// A token issued before this instant is refused. Moved forward at each password change,
+  /// reset and deactivation, so old sessions never come back.
+  sessionsRevokedBefore DateTime? @map("sessions_revoked_before")
 
   roles          UserRole[]
   messages       Message[]
@@ -35,10 +42,15 @@ model User {
   @@map("users")
 }
 
-/// Global roles: admin, member, guest, bot (identifiers, see packages/shared).
+/// Global roles: admin, moderator, member, guest, bot (identifiers, see packages/shared).
+/// `rank` and `permissions` are copied from the code at each startup (ensureRoles): the code is
+/// the source of truth, the table keeps the database consistent with it.
 model Role {
   id          String @id @default(uuid(7)) @db.Uuid
   name        String @unique
+  /// Higher outranks lower; the bot role is 0, outside the hierarchy of people.
+  rank        Int    @default(0)
+  /// Object of permission names set to true, e.g. {"channel.create": true}.
   permissions Json   @default("{}")
 
   users UserRole[]
