@@ -4,7 +4,7 @@ Messagerie de bureau locale, auto-hébergée et structurée en salons : une alte
 
 Percival est le socle d'un futur écosystème logiciel, avec une intégration prévue avec 4Elements.
 
-> **État :** v0.0.4 validée (salons, messages en temps réel, Markdown sécurisé, modification et suppression de ses messages, indicateur de frappe, messages non lus, notifications Windows, rattrapage après une coupure, fenêtre Paramètres avec thème et mises à jour, fichiers joints avec aperçu des images et téléchargement), avec installateur Windows et mises à jour automatiques.
+> **État :** v0.0.5 validée (salons publics et privés, messages en temps réel, Markdown sécurisé, modification et suppression de ses messages, indicateur de frappe, messages non lus, notifications Windows, rattrapage après une coupure, fenêtre Paramètres avec thème et mises à jour, fichiers joints avec aperçu des images et téléchargement, rôles Admin, Modo, Membre et Invité, gestion des comptes avec mots de passe provisoires, modération des messages), avec installateur Windows et mises à jour automatiques.
 
 ## Stack
 
@@ -56,7 +56,7 @@ Autres commandes utiles :
 | `docker compose logs -f api`      | logs de l'API                                            |
 | `docker compose down`             | arrête la pile (`-v` efface base **et fichiers joints**) |
 
-**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du serveur vérifient aussi les fichiers joints (types refusés d'après le contenu, taille, droits d'accès au téléchargement). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur, la gestion des erreurs de l'API, la remise à jour de l'historique après une coupure, les notifications, le thème, les mises à jour et la préparation des fichiers à envoyer.
+**Tests.** Ceux du serveur ont besoin de PostgreSQL (`docker compose up -d db`) : ils créent et vident leur propre base `percival_test`, jamais celle de l'application (le nom doit finir par `_test`). Ceux du serveur vérifient aussi les fichiers joints (types refusés d'après le contenu, taille, droits d'accès au téléchargement) ainsi que les rôles et les droits (hiérarchie Admin, Modo, Membre, Invité, gestion des comptes, mots de passe provisoires, sessions fermées, salons privés, modération, cloisonnement des invités). Ceux du client couvrent le rendu Markdown (dont les cas d'injection HTML), la validation de l'adresse du serveur, la gestion des erreurs de l'API, la remise à jour de l'historique après une coupure, les notifications, le thème, les mises à jour et la préparation des fichiers à envoyer.
 
 Le client n'accepte que `localhost` ou une adresse Tailscale (`*.ts.net`, en HTTPS) comme adresse de serveur : c'est volontaire, la politique de sécurité (CSP) de l'application l'impose.
 
