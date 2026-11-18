@@ -167,9 +167,11 @@ describe('editing and deleting messages', () => {
       expect(stored.content).toBe('à supprimer');
     });
 
-    it("refuses to delete someone else's message, administrators included", async () => {
+    it("refuses to delete someone else's message to anyone who cannot moderate", async () => {
+      // Moderators and admins are covered by moderation.test.ts.
+      const carol = await createUser(ctx.prisma, 'carol', 'member');
       const original = await post(bob.token, generalId, 'pas touche');
-      const response = await remove(alice.token, generalId, original.id);
+      const response = await remove(tokenFor(ctx.app, carol.id), generalId, original.id);
       expect(response.statusCode).toBe(403);
       expect(response.json<ApiErrorBody>().error.code).toBe('forbidden');
       const ids = (await history(bob.token, generalId)).map((entry) => entry.id);

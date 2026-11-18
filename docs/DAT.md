@@ -81,7 +81,7 @@ Décisions prises avec le propriétaire du projet avant le début du développem
 
 ### Messages (v0.0.3)
 
-- Seul l'auteur modifie ou supprime son message. La modération par les rôles Admin et Modo viendra avec la v0.0.5.
+- Seul l'auteur modifie son message. Seul l'auteur le supprime en v0.0.3 ; depuis la v0.0.5, les Admin et les Modo suppriment aussi les messages des comptes de rang inférieur (voir « Rôles, comptes et administration »).
 - Événements temps réel : `message_updated` (message complet), `message_deleted` (identifiants), `user_typing` (relayé aux autres membres du salon, jamais à l'émetteur ; le client l'émet au plus toutes les 3 s, l'indicateur disparaît après 5 s).
 - Après une coupure, le client récupère les messages manqués, les modifications et les suppressions par l'API REST (dernière page de chaque salon déjà ouvert).
 
@@ -96,9 +96,33 @@ Décisions prises avec le propriétaire du projet avant le début du développem
 - **Messages :** un message peut ne contenir que des fichiers (texte vide). Modifier un message conserve ses fichiers ; son texte peut alors être vidé. Supprimer un message (suppression logique) rend ses fichiers inaccessibles, mais ils restent sur le disque (archive) : aucune purge automatique en v1.
 - **Sauvegardes :** le volume `uploads` est à sauvegarder avec la base PostgreSQL (v0.0.7).
 
+### Rôles, comptes et administration (v0.0.5)
+
+- **Rôles :** `admin`, `moderator` (affiché « Modo »), `member`, `guest` (« Invité »), `bot`. Hiérarchie Admin > Modo > Membre > Invité ; le Bot est hors hiérarchie (rang 0, aucune permission, et n'importe quel modérateur peut supprimer ses messages). Un compte humain a un seul rôle. La table `roles` reçoit une colonne `rank`, et `permissions` (JSONB) liste les permissions du rôle. La source de vérité est le code (`packages/shared/src/roles.ts`) : le serveur resynchronise `rank` et `permissions` dans la table à chaque démarrage.
+- **Règle générale :** on n'agit que sur un compte de rang strictement inférieur au sien, et on n'attribue qu'un rôle inférieur au sien. Conséquence voulue : personne ne touche à un compte de même rang, le sien compris (pas de désactivation ni de changement de rôle de son propre compte). Toutes les vérifications sont faites côté serveur ; masquer un bouton ne protège rien.
+- **Permissions :**
+
+  | Permission                                                                        |        Admin         |      Modo      |
+  | --------------------------------------------------------------------------------- | :------------------: | :------------: |
+  | Créer un salon, renommer un salon, gérer ses membres                              |         oui          |      oui       |
+  | Supprimer les messages d'un compte de rang inférieur                              |         oui          |      oui       |
+  | Voir la liste des comptes (un Modo ne voit ni les Admin ni les Modo)              |         oui          |      oui       |
+  | Créer un compte, désactiver / réactiver un compte, réinitialiser son mot de passe |         oui          |      oui       |
+  | Rôle que l'on peut donner à la création                                           | Modo, Membre, Invité | Membre, Invité |
+  | Changer le rôle d'un compte                                                       |         oui          |      non       |
+
+  Ni le Modo ni l'Admin ne peuvent supprimer un salon : la suppression de salon n'existe pas encore. Les bots, jetons et webhooks (v0.0.6) et les réglages du serveur restent hors de portée du Modo.
+
+- **Salons :** la visibilité ne change pas (l'Admin voit tout ; les autres voient les salons publics, sauf les Invités, et ceux dont ils sont membres ; un Invité ne voit que ses salons assignés). Un Modo gère donc les membres des salons qu'il voit. Un salon privé se crée avec sa case « Salon privé » et son créateur en devient membre ; le caractère privé ne se modifie pas après la création. Pour un salon public, la liste des membres sert à assigner les Invités.
+- **Comptes :** `users` reçoit `disabled_at` (compte désactivé : connexion refusée, connexions temps réel coupées sur le coup, historique conservé), `must_change_password` et `sessions_revoked_before` (un jeton émis avant cette date est refusé ; la date est mise à jour à chaque changement ou réinitialisation de mot de passe et à chaque désactivation, pour qu'une réactivation ne ressuscite pas d'anciennes sessions).
+- **Mots de passe :** l'Admin ou le Modo saisit un mot de passe provisoire (le client peut en générer un) et le communique lui-même : il n'y a pas de courriel. Le compte porte alors `must_change_password` : tant que la personne n'a pas choisi son propre mot de passe, le serveur refuse tout sauf `GET /api/auth/me` et `POST /api/auth/password` (403 `password_change_required`), et le client n'affiche que l'écran de changement. Même chose après une réinitialisation. Paramètres > Compte permet de changer son mot de passe à tout moment (mot de passe actuel exigé, nouveau mot de passe différent) ; les autres sessions du compte sont alors fermées.
+- **API :** `GET /api/users`, `POST /api/users`, `PATCH /api/users/:id` (`role`, `active`), `POST /api/users/:id/password`, `POST /api/auth/password`, `PATCH /api/channels/:id` (nom, description), `GET /api/channels/:id/members`, `PUT /api/channels/:id/members/:userId`, `DELETE /api/channels/:id/members/:userId`. `POST /api/channels` accepte `isPrivate`. La suppression d'un message d'autrui passe par la route de suppression habituelle ; la modification reste réservée à l'auteur.
+- **Temps réel :** nouveaux événements `channel_updated` (salon renommé), `channel_removed` (la personne n'a plus accès au salon) et `account_updated` (rôle ou état de son propre compte modifié). Le serveur ajuste les salons auxquels les connexions d'une personne sont abonnées quand ses droits ou ses appartenances changent.
+- **Codes d'erreur ajoutés :** `account_disabled` (403, à la connexion ou en cours de session) et `password_change_required` (403).
+
 ### Comptes
 
-- Seuls les administrateurs créent les comptes. Pas d'inscription ouverte.
+- Seuls les administrateurs et les modérateurs créent les comptes, depuis Paramètres > Administration (avec un rôle inférieur au leur). Pas d'inscription ouverte.
 - Le premier administrateur est créé par un script au démarrage du serveur.
 
 ### Défauts retenus

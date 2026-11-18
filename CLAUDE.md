@@ -13,7 +13,7 @@ Private, self-hosted, desktop chat app organized in channels (a Discord-like too
 ## Scope decisions
 
 - No offline mode, no read cache. The server holds all logic and archives.
-- Roles are global (Admin, Membre, Invité, Bot). Private channels and guest access use `channel_members`. Bots use hashed personal access tokens (`access_tokens`). Inbound webhooks use the `webhooks` table.
+- Roles are global and ranked (Admin > Modo > Membre > Invité; Bot is outside the hierarchy). A user acts only on a strictly lower rank and grants only a lower role; the rules live in `packages/shared/src/roles.ts` and are enforced server side. Private channels and guest access use `channel_members`. Bots use hashed personal access tokens (`access_tokens`). Inbound webhooks use the `webhooks` table.
 - Only admins create accounts. The first admin is created by a script.
 - Soft delete on messages. Uploads: 25 MB limit and a MIME allowlist.
 - Out of v1: online presence, threads, reactions, full-text search.

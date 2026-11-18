@@ -1,9 +1,12 @@
 import {
   ERROR_CODES,
   type ApiErrorBody,
+  type ChangePasswordRequest,
+  type ChannelMembersResponse,
   type ChannelsResponse,
   type CreateChannelRequest,
   type CreateChannelResponse,
+  type CreateUserRequest,
   type DeleteMessageResponse,
   type EditMessageResponse,
   type ErrorCode,
@@ -13,7 +16,13 @@ import {
   type MarkChannelReadResponse,
   type MeResponse,
   type MessagesPageResponse,
+  type ResetPasswordRequest,
   type SendMessageResponse,
+  type UpdateChannelRequest,
+  type UpdateChannelResponse,
+  type UpdateUserRequest,
+  type UserResponse,
+  type UsersResponse,
 } from '@percival/shared';
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -45,10 +54,16 @@ function isErrorCode(value: unknown): value is ErrorCode {
   return typeof value === 'string' && (ERROR_CODES as readonly string[]).includes(value);
 }
 
-let unauthorizedHandler: (() => void) | null = null;
+/** Why a session ends on the server's word: the token is no longer good, or the account was disabled. */
+export type SessionEndReason = 'expired' | 'disabled';
 
-/** Called when the server rejects the session token (expired, or the account is gone). */
-export function onUnauthorized(handler: () => void): void {
+let unauthorizedHandler: ((reason: SessionEndReason) => void) | null = null;
+
+/**
+ * Called when the server rejects the session token (expired, closed, or the account is gone) or
+ * says the account was disabled.
+ */
+export function onUnauthorized(handler: (reason: SessionEndReason) => void): void {
   unauthorizedHandler = handler;
 }
 
@@ -56,7 +71,10 @@ export function onUnauthorized(handler: () => void): void {
 function errorFor(response: Response, payload: unknown, token?: string): ApiError {
   const code = (payload as Partial<ApiErrorBody> | null)?.error?.code;
   if (isErrorCode(code)) {
-    if (code === 'unauthorized' && token) unauthorizedHandler?.();
+    if (token) {
+      if (code === 'unauthorized') unauthorizedHandler?.('expired');
+      if (code === 'account_disabled') unauthorizedHandler?.('disabled');
+    }
     return new ApiError(code, response.status);
   }
   const unreachable = PROXY_UNREACHABLE_STATUSES.has(response.status);
@@ -119,6 +137,55 @@ export function fetchMe(serverUrl: string, token: string): Promise<MeResponse> {
   return request<MeResponse>(serverUrl, '/api/auth/me', {}, token);
 }
 
+/** Chooses one's own password. The answer carries the fresh token: the old one is closed. */
+export function changePassword(
+  serverUrl: string,
+  token: string,
+  body: ChangePasswordRequest,
+): Promise<LoginResponse> {
+  return request<LoginResponse>(serverUrl, '/api/auth/password', jsonBody(body), token);
+}
+
+export function listUsers(serverUrl: string, token: string): Promise<UsersResponse> {
+  return request<UsersResponse>(serverUrl, '/api/users', {}, token);
+}
+
+export function createUser(
+  serverUrl: string,
+  token: string,
+  body: CreateUserRequest,
+): Promise<UserResponse> {
+  return request<UserResponse>(serverUrl, '/api/users', jsonBody(body), token);
+}
+
+export function updateUser(
+  serverUrl: string,
+  token: string,
+  userId: string,
+  body: UpdateUserRequest,
+): Promise<UserResponse> {
+  return request<UserResponse>(
+    serverUrl,
+    `/api/users/${encodeURIComponent(userId)}`,
+    jsonBody(body, 'PATCH'),
+    token,
+  );
+}
+
+export function resetUserPassword(
+  serverUrl: string,
+  token: string,
+  userId: string,
+  password: string,
+): Promise<UserResponse> {
+  return request<UserResponse>(
+    serverUrl,
+    `/api/users/${encodeURIComponent(userId)}/password`,
+    jsonBody({ password } satisfies ResetPasswordRequest),
+    token,
+  );
+}
+
 export function listChannels(serverUrl: string, token: string): Promise<ChannelsResponse> {
   return request<ChannelsResponse>(serverUrl, '/api/channels', {}, token);
 }
@@ -129,6 +196,62 @@ export function createChannel(
   channel: CreateChannelRequest,
 ): Promise<CreateChannelResponse> {
   return request<CreateChannelResponse>(serverUrl, '/api/channels', jsonBody(channel), token);
+}
+
+export function updateChannel(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  body: UpdateChannelRequest,
+): Promise<UpdateChannelResponse> {
+  return request<UpdateChannelResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}`,
+    jsonBody(body, 'PATCH'),
+    token,
+  );
+}
+
+export function listChannelMembers(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+): Promise<ChannelMembersResponse> {
+  return request<ChannelMembersResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/members`,
+    {},
+    token,
+  );
+}
+
+export function addChannelMember(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  userId: string,
+): Promise<ChannelMembersResponse> {
+  // No body, hence no Content-Type: the server would refuse an empty JSON body.
+  return request<ChannelMembersResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'PUT' },
+    token,
+  );
+}
+
+export function removeChannelMember(
+  serverUrl: string,
+  token: string,
+  channelId: string,
+  userId: string,
+): Promise<ChannelMembersResponse> {
+  return request<ChannelMembersResponse>(
+    serverUrl,
+    `/api/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+    token,
+  );
 }
 
 export function fetchMessages(

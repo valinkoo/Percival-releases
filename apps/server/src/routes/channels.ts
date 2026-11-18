@@ -1,4 +1,5 @@
 import type {
+  ChannelMembersResponse,
   ChannelsResponse,
   CreateChannelResponse,
   DeleteMessageResponse,
@@ -6,12 +7,14 @@ import type {
   MarkChannelReadResponse,
   MessagesPageResponse,
   SendMessageResponse,
+  UpdateChannelResponse,
 } from '@percival/shared';
 import { MESSAGES_PAGE_DEFAULT, MESSAGES_PAGE_MAX, MESSAGE_MAX_LENGTH } from '@percival/shared';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { removeUploads } from '../attachments/storage.js';
 import { findAccessibleChannel, listAccessibleChannels } from '../channels/access.js';
+import { addChannelMember, listChannelMembers, removeChannelMember } from '../channels/members.js';
 import { toChannelDto } from '../channels/serialize.js';
 import { channelDescriptionSchema, channelNameSchema } from '../channels/validation.js';
 import { AppError } from '../errors.js';
@@ -25,15 +28,27 @@ import {
   markChannelRead,
   postMessage,
 } from '../messages/service.js';
-import { isAdmin } from '../users/account.js';
+import { requirePermission } from '../users/account.js';
 
 const channelParamsSchema = z.object({ channelId: z.uuid() });
 const messageParamsSchema = z.object({ channelId: z.uuid(), messageId: z.uuid() });
 
+const memberParamsSchema = z.object({ channelId: z.uuid(), userId: z.uuid() });
+
 const createChannelBodySchema = z.object({
   name: channelNameSchema,
   description: channelDescriptionSchema.optional(),
+  isPrivate: z.boolean().optional(),
 });
+
+const updateChannelBodySchema = z
+  .object({
+    name: channelNameSchema.optional(),
+    description: channelDescriptionSchema.optional(),
+  })
+  .refine((body) => body.name !== undefined || body.description !== undefined, {
+    message: 'give at least one of "name" and "description"',
+  });
 
 /** Trailing blank space is noise; leading spaces can matter in Markdown (indented code). */
 const messageText = z
@@ -74,16 +89,20 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/', async (request, reply): Promise<CreateChannelResponse> => {
     reply.status(201);
-    // Only administrators create channels for now; finer permissions come with the roles (v0.0.5).
-    if (!isAdmin(request.account)) {
-      throw new AppError(403, 'forbidden', 'Only administrators can create channels');
-    }
+    requirePermission(request.account, 'channel.create');
     const body = createChannelBodySchema.parse(request.body);
+    const isPrivate = body.isPrivate ?? false;
 
     let channel;
     try {
       channel = await app.prisma.channel.create({
-        data: { name: body.name, description: body.description ?? '' },
+        data: {
+          name: body.name,
+          description: body.description ?? '',
+          isPrivate,
+          // A private channel is only visible to its members: its creator must be one.
+          ...(isPrivate && { members: { create: { userId: request.account.id } } }),
+        },
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -93,8 +112,53 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const dto = toChannelDto(channel);
-    await app.realtime.publishChannel(dto);
+    await app.realtime.publishChannel(dto, isPrivate ? [request.account.id] : []);
     return { channel: dto };
+  });
+
+  app.patch('/:channelId', async (request): Promise<UpdateChannelResponse> => {
+    requirePermission(request.account, 'channel.rename');
+    const { channelId } = channelParamsSchema.parse(request.params);
+    const body = updateChannelBodySchema.parse(request.body);
+    // Same answer for a missing channel and one the account cannot see.
+    if (!(await findAccessibleChannel(app.prisma, request.account, channelId))) {
+      throw channelNotFound();
+    }
+
+    let channel;
+    try {
+      channel = await app.prisma.channel.update({
+        where: { id: channelId },
+        data: {
+          ...(body.name !== undefined && { name: body.name }),
+          ...(body.description !== undefined && { description: body.description }),
+        },
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new AppError(409, 'conflict', 'A channel with this name already exists');
+      }
+      throw error;
+    }
+
+    const dto = toChannelDto(channel);
+    app.realtime.publishChannelUpdated(dto);
+    return { channel: dto };
+  });
+
+  app.get('/:channelId/members', async (request): Promise<ChannelMembersResponse> => {
+    const { channelId } = channelParamsSchema.parse(request.params);
+    return listChannelMembers(app, request.account, channelId);
+  });
+
+  app.put('/:channelId/members/:userId', async (request): Promise<ChannelMembersResponse> => {
+    const { channelId, userId } = memberParamsSchema.parse(request.params);
+    return addChannelMember(app, request.account, channelId, userId);
+  });
+
+  app.delete('/:channelId/members/:userId', async (request): Promise<ChannelMembersResponse> => {
+    const { channelId, userId } = memberParamsSchema.parse(request.params);
+    return removeChannelMember(app, request.account, channelId, userId);
   });
 
   app.get('/:channelId/messages', async (request): Promise<MessagesPageResponse> => {

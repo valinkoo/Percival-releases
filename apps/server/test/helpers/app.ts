@@ -82,6 +82,16 @@ export function tokenFor(app: FastifyInstance, userId: string, expiresIn?: strin
   return app.jwt.sign({ sub: userId }, expiresIn ? { expiresIn } : {});
 }
 
+/**
+ * A token issued `ageSeconds` ago: older than any revocation that happens during a test (tokens
+ * are compared with a revocation by the second, so a token signed "now" would not be revoked).
+ */
+export function oldTokenFor(app: FastifyInstance, userId: string, ageSeconds = 60): string {
+  // `iat` is an accepted claim that the app's payload type does not list.
+  const payload = { sub: userId, iat: Math.floor(Date.now() / 1000) - ageSeconds };
+  return app.jwt.sign(payload as { sub: string });
+}
+
 export function authHeader(token: string): { authorization: string } {
   return { authorization: `Bearer ${token}` };
 }

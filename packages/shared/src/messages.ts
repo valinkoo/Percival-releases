@@ -1,9 +1,15 @@
 import type { AttachmentDto } from './attachments.js';
+import type { RoleName } from './roles.js';
 
 export interface MessageAuthorDto {
   id: string;
   username: string;
   isBot: boolean;
+  /**
+   * The author's highest role when the message is served. It tells a moderator whether they
+   * outrank the author; the server decides again when the message is deleted.
+   */
+  role: RoleName;
 }
 
 export interface MessageDto {

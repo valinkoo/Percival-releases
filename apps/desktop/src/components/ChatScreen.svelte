@@ -2,8 +2,10 @@
   import { onDestroy, onMount } from 'svelte';
   import { chat } from '../lib/chat.svelte';
   import { CONNECTION_LABELS } from '../lib/connection';
+  import { can } from '../lib/roles';
   import { session } from '../lib/session.svelte';
   import ChannelList from './ChannelList.svelte';
+  import ChannelSettingsPanel from './ChannelSettingsPanel.svelte';
   import Composer from './Composer.svelte';
   import MessageList from './MessageList.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -11,6 +13,11 @@
   import UpdateBanner from './UpdateBanner.svelte';
 
   let settingsOpen = $state(false);
+  let channelSettingsOpen = $state(false);
+
+  const canManageChannel = $derived(
+    can(session.user?.roles, 'channel.rename') || can(session.user?.roles, 'channel.members'),
+  );
 
   onMount(() => {
     void chat.start();
@@ -36,6 +43,16 @@
     <SettingsPanel onclose={() => (settingsOpen = false)} />
   {/if}
 
+  <!-- Tied to the open channel: if it disappears (the user lost access), the panel goes too. -->
+  {#if channelSettingsOpen && chat.activeChannel}
+    {#key chat.activeChannel.id}
+      <ChannelSettingsPanel
+        channel={chat.activeChannel}
+        onclose={() => (channelSettingsOpen = false)}
+      />
+    {/key}
+  {/if}
+
   <UpdateBanner />
 
   {#if session.notice}
@@ -48,9 +65,19 @@
     <main>
       {#if chat.activeChannel}
         <div class="channel-header">
-          <h1><span aria-hidden="true">#</span>{chat.activeChannel.name}</h1>
+          <h1>
+            <span aria-hidden="true">#</span>{chat.activeChannel.name}
+            {#if chat.activeChannel.isPrivate}
+              <span class="lock" role="img" aria-label="Salon privé" title="Salon privé">🔒</span>
+            {/if}
+          </h1>
           {#if chat.activeChannel.description}
             <p>{chat.activeChannel.description}</p>
+          {/if}
+          {#if canManageChannel}
+            <button type="button" class="manage" onclick={() => (channelSettingsOpen = true)}>
+              Gérer le salon
+            </button>
           {/if}
         </div>
         {#key chat.activeChannel.id}
@@ -59,7 +86,10 @@
           <Composer channelId={chat.activeChannel.id} channelName={chat.activeChannel.name} />
         {/key}
       {:else if !chat.loading && !chat.error}
-        <p class="empty">Aucun salon à afficher. Un administrateur peut en créer un.</p>
+        <p class="empty">
+          Aucun salon à afficher. Un administrateur ou un Modo peut en créer un, ou vous donner
+          accès à un salon existant.
+        </p>
       {/if}
     </main>
   </div>
@@ -186,6 +216,26 @@
     font-size: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .lock {
+    margin-left: 4px;
+    font-size: 13px;
+  }
+
+  .manage {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 4px 12px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .manage:hover {
+    border-color: var(--accent);
   }
 
   .empty {

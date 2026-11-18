@@ -10,10 +10,15 @@ declare module 'fastify' {
     prisma: PrismaClient;
     realtime: Realtime;
     /**
-     * onRequest hook: rejects the request unless it carries a valid JWT of an existing account,
-     * and sets `request.account`.
+     * onRequest hook: rejects the request unless it carries a valid JWT of an existing, enabled
+     * account whose password is not a temporary one, and sets `request.account`.
      */
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /**
+     * Same as `authenticate`, but accepts an account that must still change its temporary
+     * password. Only the routes that serve that purpose use it.
+     */
+    authenticateForPasswordChange: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 
   interface FastifyRequest {

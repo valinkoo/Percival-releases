@@ -1,5 +1,12 @@
 import type { LoginResponse, UserDto } from '@percival/shared';
-import { ApiError, fetchMe, login, onUnauthorized } from './api';
+import {
+  ApiError,
+  changePassword,
+  fetchMe,
+  login,
+  onUnauthorized,
+  type SessionEndReason,
+} from './api';
 import { errorMessage } from './messages';
 import { parseServerUrl } from './server-url';
 import { deleteToken, loadServerUrl, loadToken, saveServerUrl, saveToken } from './storage';
@@ -81,10 +88,44 @@ class Session {
   }
 
   /** The server refused the token: back to the login screen, with an explanation. */
-  async expire(): Promise<void> {
+  async expire(reason: SessionEndReason = 'expired'): Promise<void> {
     if (this.status !== 'signedIn') return;
     await this.signOut();
-    this.notice = 'Votre session a expiré. Reconnectez-vous.';
+    this.notice =
+      reason === 'disabled'
+        ? 'Ce compte a été désactivé par un administrateur.'
+        : 'Votre session a expiré. Reconnectez-vous.';
+  }
+
+  /** The server says something changed about the signed-in account (its role, for instance). */
+  setUser(user: UserDto): void {
+    if (this.status === 'signedIn') this.user = user;
+  }
+
+  /**
+   * The person chooses their own password. The server closes the other sessions and hands back a
+   * fresh token, which replaces the current one. Returns a French error message, or `null`.
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<string | null> {
+    const token = this.#token;
+    if (!token) return errorMessage(null);
+
+    let response: LoginResponse;
+    try {
+      response = await changePassword(this.serverUrl, token, { currentPassword, newPassword });
+    } catch (error) {
+      return errorMessage(error, { invalid_credentials: 'Le mot de passe actuel est incorrect.' });
+    }
+
+    this.#token = response.token;
+    this.user = response.user;
+    try {
+      await saveToken(response.token);
+    } catch {
+      this.notice =
+        'Impossible de mémoriser la session : vous devrez vous reconnecter au prochain lancement.';
+    }
+    return null;
   }
 
   async signOut(): Promise<void> {
@@ -106,5 +147,5 @@ class Session {
 
 export const session = new Session();
 
-// Any authenticated request rejected with "unauthorized" ends the session.
-onUnauthorized(() => void session.expire());
+// Any authenticated request rejected with "unauthorized" (or for a disabled account) ends the session.
+onUnauthorized((reason) => void session.expire(reason));

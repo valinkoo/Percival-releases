@@ -1,13 +1,22 @@
-import { ROLE_NAMES } from '@percival/shared';
+import { ROLE_NAMES, ROLE_PERMISSIONS, ROLE_RANK } from '@percival/shared';
 import type { z } from 'zod';
 import type { PrismaClient } from './db.js';
 import { hashPassword } from './security/password.js';
 import { newPasswordSchema, usernameSchema } from './users/validation.js';
 
-/** Makes sure every global role exists. Safe to run at each startup. */
+/**
+ * Makes sure every global role exists and copies its rank and permissions from the code (the
+ * source of truth) into the table. Safe to run at each startup.
+ */
 export async function ensureRoles(prisma: PrismaClient): Promise<void> {
   for (const name of ROLE_NAMES) {
-    await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
+    const data = {
+      rank: ROLE_RANK[name],
+      permissions: Object.fromEntries(
+        ROLE_PERMISSIONS[name].map((permission) => [permission, true]),
+      ),
+    };
+    await prisma.role.upsert({ where: { name }, update: data, create: { name, ...data } });
   }
 }
 

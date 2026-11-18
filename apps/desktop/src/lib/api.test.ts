@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
+  addChannelMember,
+  changePassword,
   fetchAttachment,
   fetchMe,
   listChannels,
+  listUsers,
   login,
   onUnauthorized,
+  removeChannelMember,
+  resetUserPassword,
   sendMessage,
+  updateChannel,
+  updateUser,
 } from './api';
 
 function respond(body: BodyInit | null, init: ResponseInit = {}) {
@@ -99,6 +106,113 @@ describe('api error mapping', () => {
     });
     await failureOf(login('http://localhost:3000', { username: 'a', password: 'b' }));
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('sessions ended by the server', () => {
+  it('tells the handler a session expired or that the account was disabled', async () => {
+    const handler = vi.fn();
+    onUnauthorized(handler);
+
+    respond(JSON.stringify({ error: { code: 'unauthorized', message: 'x' } }), { status: 401 });
+    await failureOf(fetchMe('http://localhost:3000', 'closed'));
+    respond(JSON.stringify({ error: { code: 'account_disabled', message: 'x' } }), {
+      status: 403,
+    });
+    await failureOf(fetchMe('http://localhost:3000', 'old'));
+
+    expect(handler.mock.calls).toEqual([['expired'], ['disabled']]);
+  });
+
+  it('only reports a disabled account when the answer is about a signed-in session', async () => {
+    const handler = vi.fn();
+    onUnauthorized(handler);
+    respond(JSON.stringify({ error: { code: 'account_disabled', message: 'x' } }), {
+      status: 403,
+    });
+    const error = await failureOf(login('http://localhost:3000', { username: 'a', password: 'b' }));
+    expect(error.code).toBe('account_disabled');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('does not take a wrong current password for an expired session', async () => {
+    const handler = vi.fn();
+    onUnauthorized(handler);
+    respond(JSON.stringify({ error: { code: 'invalid_credentials', message: 'x' } }), {
+      status: 403,
+    });
+    const error = await failureOf(
+      changePassword('http://localhost:3000', 'tok', { currentPassword: 'a', newPassword: 'b' }),
+    );
+    expect(error).toMatchObject({ code: 'invalid_credentials', status: 403 });
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('administration calls', () => {
+  const lastCall = () => {
+    const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    return { url, init, headers: new Headers(init?.headers) };
+  };
+
+  it('changes one’s own password with a JSON POST', async () => {
+    respond(JSON.stringify({ token: 'new' }), { status: 200 });
+    await changePassword('http://localhost:3000', 'tok', {
+      currentPassword: 'old-password-1',
+      newPassword: 'new-password-2',
+    });
+    const { url, init, headers } = lastCall();
+    expect(url).toBe('http://localhost:3000/api/auth/password');
+    expect(init?.method).toBe('POST');
+    expect(headers.get('Authorization')).toBe('Bearer tok');
+    expect(init?.body).toBe(
+      JSON.stringify({ currentPassword: 'old-password-1', newPassword: 'new-password-2' }),
+    );
+  });
+
+  it('lists accounts, changes a role or state with PATCH and resets a password', async () => {
+    respond(JSON.stringify({ users: [] }), { status: 200 });
+    await listUsers('http://localhost:3000', 'tok');
+    expect(lastCall().url).toBe('http://localhost:3000/api/users');
+
+    respond(JSON.stringify({ user: {} }), { status: 200 });
+    await updateUser('http://localhost:3000', 'tok', 'u 1', { role: 'guest', active: false });
+    let call = lastCall();
+    expect(call.url).toBe('http://localhost:3000/api/users/u%201');
+    expect(call.init?.method).toBe('PATCH');
+    expect(call.init?.body).toBe(JSON.stringify({ role: 'guest', active: false }));
+
+    respond(JSON.stringify({ user: {} }), { status: 200 });
+    await resetUserPassword('http://localhost:3000', 'tok', 'u1', 'Temporary-Pass-1');
+    call = lastCall();
+    expect(call.url).toBe('http://localhost:3000/api/users/u1/password');
+    expect(call.init?.body).toBe(JSON.stringify({ password: 'Temporary-Pass-1' }));
+  });
+
+  it('renames a channel with PATCH', async () => {
+    respond(JSON.stringify({ channel: {} }), { status: 200 });
+    await updateChannel('http://localhost:3000', 'tok', 'c1', { name: 'neuf', description: '' });
+    const { url, init } = lastCall();
+    expect(url).toBe('http://localhost:3000/api/channels/c1');
+    expect(init?.method).toBe('PATCH');
+    expect(init?.body).toBe(JSON.stringify({ name: 'neuf', description: '' }));
+  });
+
+  it('adds and removes members without a body, so no JSON content type is sent', async () => {
+    respond(JSON.stringify({ members: [], candidates: [] }), { status: 200 });
+    await addChannelMember('http://localhost:3000', 'tok', 'c1', 'u1');
+    let call = lastCall();
+    expect(call.url).toBe('http://localhost:3000/api/channels/c1/members/u1');
+    expect(call.init?.method).toBe('PUT');
+    expect(call.init?.body).toBeUndefined();
+    expect(call.headers.get('Content-Type')).toBeNull();
+
+    respond(JSON.stringify({ members: [], candidates: [] }), { status: 200 });
+    await removeChannelMember('http://localhost:3000', 'tok', 'c1', 'u1');
+    call = lastCall();
+    expect(call.url).toBe('http://localhost:3000/api/channels/c1/members/u1');
+    expect(call.init?.method).toBe('DELETE');
+    expect(call.headers.get('Content-Type')).toBeNull();
   });
 });
 

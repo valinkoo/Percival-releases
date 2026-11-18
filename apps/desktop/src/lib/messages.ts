@@ -10,6 +10,8 @@ const MESSAGES: Record<ApiErrorCode, string> = {
   invalid_request: 'Requête invalide. Vérifiez les informations saisies.',
   unauthorized: 'Votre session a expiré. Reconnectez-vous.',
   forbidden: "Vous n'avez pas le droit d'effectuer cette action.",
+  account_disabled: 'Ce compte est désactivé. Contactez un administrateur.',
+  password_change_required: "Vous devez d'abord choisir un nouveau mot de passe.",
   not_found: 'Ressource introuvable.',
   conflict: 'Un salon porte déjà ce nom.',
   payload_too_large: 'Fichier trop volumineux (25 Mo maximum par fichier, 5 fichiers par message).',
@@ -19,9 +21,17 @@ const MESSAGES: Record<ApiErrorCode, string> = {
   internal_error: 'Erreur du serveur. Réessayez plus tard.',
 };
 
-export function errorMessage(error: unknown): string {
+/**
+ * The French message for an error. A few codes mean different things depending on what was being
+ * done (a "conflict" is a channel name taken here, a username there): the caller says so with
+ * `overrides`.
+ */
+export function errorMessage(
+  error: unknown,
+  overrides: Partial<Record<ApiErrorCode, string>> = {},
+): string {
   if (error instanceof ApiError) {
-    return MESSAGES[error.code];
+    return overrides[error.code] ?? MESSAGES[error.code];
   }
   return MESSAGES.internal_error;
 }
