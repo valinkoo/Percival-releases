@@ -1,15 +1,27 @@
 <script lang="ts">
-  import { MESSAGE_MAX_LENGTH, type MessageDto } from '@percival/shared';
+  import { MESSAGE_MAX_LENGTH, outranks, type MessageDto } from '@percival/shared';
   import { chat } from '../lib/chat.svelte';
   import { formatFullDate, formatTimestamp } from '../lib/format';
+  import { can } from '../lib/roles';
   import { session } from '../lib/session.svelte';
   import AttachmentList from './AttachmentList.svelte';
   import MarkdownContent from './MarkdownContent.svelte';
 
   let { message, showHeader }: { message: MessageDto; showHeader: boolean } = $props();
 
-  /** Only the author can edit or delete a message (moderation comes with the roles). */
+  /** Only the author edits a message. */
   const isOwn = $derived(message.author.id === session.user?.id);
+
+  /**
+   * A moderator deletes the messages of anyone they outrank. A server that predates roles sends no
+   * author role: nothing is offered then. The server decides again when the message is deleted.
+   */
+  const canModerate = $derived(
+    !isOwn &&
+      message.author.role !== undefined &&
+      can(session.user?.roles, 'message.moderate') &&
+      outranks(session.user?.roles ?? [], [message.author.role]),
+  );
 
   let editing = $state(false);
   let draft = $state('');
@@ -92,9 +104,11 @@
 </script>
 
 <article class="message" class:grouped={!showHeader} class:editing>
-  {#if isOwn && !editing && !confirmingDelete}
+  {#if (isOwn || canModerate) && !editing && !confirmingDelete}
     <div class="actions">
-      <button type="button" onclick={startEdit}>Modifier</button>
+      {#if isOwn}
+        <button type="button" onclick={startEdit}>Modifier</button>
+      {/if}
       <button type="button" class="danger" onclick={askDelete}>Supprimer</button>
     </div>
   {/if}
@@ -140,7 +154,11 @@
 
   {#if confirmingDelete}
     <div class="confirm" role="alertdialog" aria-label="Confirmer la suppression">
-      <span>Supprimer ce message pour tout le monde ?</span>
+      <span>
+        {isOwn
+          ? 'Supprimer ce message pour tout le monde ?'
+          : `Supprimer ce message de ${message.author.username} pour tout le monde ?`}
+      </span>
       <button type="button" class="danger-solid" onclick={confirmDelete} disabled={busy}>
         {busy ? 'Suppression…' : 'Supprimer'}
       </button>

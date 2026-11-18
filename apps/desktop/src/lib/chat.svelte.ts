@@ -88,12 +88,24 @@ class Chat {
       onMessageDeleted: ({ id, channelId }) => this.#dispatch(channelId, { kind: 'remove', id }),
       onTyping: (event) => this.#onTyping(event),
       onChannel: (channel) => this.#addChannel(channel),
+      onChannelUpdated: (channel) => this.#replaceChannel(channel),
+      onChannelRemoved: (channelId) => this.#removeChannel(channelId),
+      onAccountUpdated: (user) => session.setUser(user),
       onResume: () => void this.#resync(),
-      onUnauthorized: () => void session.expire(),
+      onUnauthorized: (reason) => void session.expire(reason),
     });
     this.#trackFocus();
 
     await this.#loadChannels();
+  }
+
+  /**
+   * Starts over with the session's current token: the realtime connection was opened with the
+   * previous one, which the server closed (the person changed their password).
+   */
+  restart(): Promise<void> {
+    this.stop();
+    return this.start();
   }
 
   stop(): void {
@@ -288,16 +300,37 @@ class Chat {
   }
 
   /** Returns a French error message, or `null` when the channel was created. */
-  async createChannel(name: string, description: string): Promise<string | null> {
+  async createChannel(
+    name: string,
+    description: string,
+    isPrivate = false,
+  ): Promise<string | null> {
     const token = session.token;
     if (!token) return errorMessage(null);
     try {
       const { channel } = await api.createChannel(session.serverUrl, token, {
         name,
         ...(description.trim() !== '' ? { description } : {}),
+        ...(isPrivate ? { isPrivate } : {}),
       });
       this.#addChannel(channel);
       await this.select(channel.id);
+      return null;
+    } catch (error) {
+      return errorMessage(error);
+    }
+  }
+
+  /** Renames a channel or changes its description. Returns a French error message, or `null`. */
+  async updateChannel(
+    channelId: string,
+    changes: { name: string; description: string },
+  ): Promise<string | null> {
+    const token = session.token;
+    if (!token) return errorMessage(null);
+    try {
+      const { channel } = await api.updateChannel(session.serverUrl, token, channelId, changes);
+      this.#replaceChannel(channel);
       return null;
     } catch (error) {
       return errorMessage(error);
@@ -309,6 +342,34 @@ class Chat {
     this.channels = [...this.channels, channel].sort(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
+  }
+
+  #replaceChannel(channel: ChannelDto): void {
+    this.channels = this.channels.map((existing) =>
+      existing.id === channel.id ? channel : existing,
+    );
+  }
+
+  /**
+   * The user can no longer see the channel. Everything held about it goes, and if it was open,
+   * the first remaining channel takes its place.
+   */
+  #removeChannel(channelId: string): void {
+    if (!this.channels.some((channel) => channel.id === channelId)) return;
+    this.channels = this.channels.filter((channel) => channel.id !== channelId);
+    delete this.histories[channelId];
+    delete this.unread[channelId];
+    delete this.typing[channelId];
+    this.#pending.delete(channelId);
+    this.#markedRead.delete(channelId);
+    if (this.activeChannelId === channelId) {
+      const next = this.channels[0];
+      if (next) {
+        void this.select(next.id);
+      } else {
+        this.activeChannelId = null;
+      }
+    }
   }
 
   /** Names of the people currently typing in a channel (never the signed-in user). */
@@ -420,7 +481,15 @@ class Chat {
     if (!token) return;
     try {
       const { channels, unread } = await api.listChannels(session.serverUrl, token);
-      for (const channel of channels) this.#addChannel(channel);
+      // What changed while offline: channels gained, renamed or lost.
+      const stillVisible = new Set(channels.map((channel) => channel.id));
+      for (const known of [...this.channels]) {
+        if (!stillVisible.has(known.id)) this.#removeChannel(known.id);
+      }
+      for (const channel of channels) {
+        this.#addChannel(channel);
+        this.#replaceChannel(channel);
+      }
       this.unread = unread ?? {};
     } catch {
       // The next reconnection will try again.

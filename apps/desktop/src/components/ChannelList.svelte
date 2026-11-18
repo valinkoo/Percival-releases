@@ -1,13 +1,15 @@
 <script lang="ts">
   import { CHANNEL_DESCRIPTION_MAX_LENGTH, CHANNEL_NAME_MAX_LENGTH } from '@percival/shared';
   import { chat } from '../lib/chat.svelte';
+  import { can } from '../lib/roles';
   import { session } from '../lib/session.svelte';
 
-  const isAdmin = $derived(session.user?.roles.includes('admin') ?? false);
+  const canCreate = $derived(can(session.user?.roles, 'channel.create'));
 
   let creating = $state(false);
   let name = $state('');
   let description = $state('');
+  let isPrivate = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
 
@@ -20,6 +22,7 @@
     creating = false;
     name = '';
     description = '';
+    isPrivate = false;
     error = null;
   }
 
@@ -28,7 +31,7 @@
     if (busy) return;
     busy = true;
     error = null;
-    const failure = await chat.createChannel(name, description);
+    const failure = await chat.createChannel(name, description, isPrivate);
     busy = false;
     if (failure) {
       error = failure;
@@ -41,7 +44,7 @@
 <nav class="sidebar" aria-label="Salons">
   <div class="heading">
     <h2>Salons</h2>
-    {#if isAdmin && !creating}
+    {#if canCreate && !creating}
       <button type="button" class="add" onclick={openForm} title="Créer un salon">+</button>
     {/if}
   </div>
@@ -69,6 +72,14 @@
           maxlength={CHANNEL_DESCRIPTION_MAX_LENGTH}
           autocomplete="off"
         />
+      </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={isPrivate} />
+        <span>
+          Salon privé
+          <span class="check-hint">visible seulement par ses membres ; vous en êtes le premier</span
+          >
+        </span>
       </label>
       <div class="actions">
         <button type="submit" class="primary" disabled={busy}>{busy ? 'Création…' : 'Créer'}</button
@@ -101,7 +112,12 @@
             title={channel.description || undefined}
             onclick={() => chat.select(channel.id)}
           >
-            <span class="name"><span class="hash" aria-hidden="true">#</span>{channel.name}</span>
+            <span class="name">
+              <span class="hash" aria-hidden="true">#</span>{channel.name}
+              {#if channel.isPrivate}
+                <span class="lock" role="img" aria-label="Salon privé" title="Salon privé">🔒</span>
+              {/if}
+            </span>
             {#if unread > 0}
               <span
                 class="unread"
@@ -203,6 +219,31 @@
   .hash {
     margin-right: 4px;
     opacity: 0.6;
+  }
+
+  .lock {
+    margin-left: 4px;
+    font-size: 11px;
+  }
+
+  label.check {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    font-weight: 600;
+  }
+
+  label.check input {
+    margin: 2px 0 0;
+    padding: 0;
+    accent-color: var(--accent);
+  }
+
+  .check-hint {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 400;
   }
 
   .add {

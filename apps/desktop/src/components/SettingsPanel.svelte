@@ -5,11 +5,13 @@
   import { CONNECTION_LABELS } from '../lib/connection';
   import { openExternal } from '../lib/external';
   import { formatFullDate } from '../lib/format';
-  import { ROLE_LABELS } from '../lib/roles';
+  import { ROLE_LABELS, can } from '../lib/roles';
   import { session } from '../lib/session.svelte';
   import { inTauri } from '../lib/tauri';
   import { THEME_OPTIONS, theme } from '../lib/theme.svelte';
   import { updater } from '../lib/updater.svelte';
+  import PasswordForm from './PasswordForm.svelte';
+  import UsersPanel from './UsersPanel.svelte';
 
   /** The author's page, behind the "by valinko" link of the About section. */
   const AUTHOR_URL = 'https://valinko.carrd.co/';
@@ -19,8 +21,12 @@
   let dialog = $state<HTMLDialogElement>();
   let appVersion = $state('');
   let signingOut = $state(false);
+  let changingPassword = $state(false);
+  let passwordChangeDone = $state(false);
+  let usersOpen = $state(false);
 
   const user = $derived(session.user);
+  const canAdminister = $derived(can(user?.roles, 'user.list'));
   const searching = $derived(updater.checkState === 'checking');
   const installing = $derived(updater.phase === 'installing');
 
@@ -29,6 +35,16 @@
     // The running build (only known inside the Tauri shell).
     if (inTauri) void getVersion().then((version) => (appVersion = version));
   });
+
+  /**
+   * The server closed the other sessions, including the realtime connection of this one: it is
+   * reopened with the fresh token the password change handed back.
+   */
+  function passwordChanged() {
+    changingPassword = false;
+    passwordChangeDone = true;
+    void chat.restart();
+  }
 
   async function signOut() {
     signingOut = true;
@@ -82,10 +98,38 @@
         <dd class="server">{session.serverUrl}</dd>
       </div>
     </dl>
-    <button type="button" class="signout" onclick={signOut} disabled={signingOut}>
-      {signingOut ? 'Déconnexion…' : 'Se déconnecter'}
-    </button>
+    <div class="account-actions">
+      <button type="button" onclick={() => (changingPassword = !changingPassword)}>
+        Changer le mot de passe
+      </button>
+      <button type="button" class="signout" onclick={signOut} disabled={signingOut}>
+        {signingOut ? 'Déconnexion…' : 'Se déconnecter'}
+      </button>
+    </div>
+    {#if changingPassword}
+      <div class="password-box">
+        <PasswordForm onsuccess={passwordChanged} oncancel={() => (changingPassword = false)} />
+      </div>
+    {/if}
+    {#if passwordChangeDone}
+      <p role="status" class="success">Mot de passe changé. Vos autres sessions ont été fermées.</p>
+    {/if}
   </section>
+
+  {#if canAdminister}
+    <section aria-labelledby="settings-admin">
+      <h3 id="settings-admin">Administration</h3>
+      <p class="hint">
+        {#if can(user?.roles, 'user.role')}
+          Créez les comptes, changez les rôles, désactivez ou réinitialisez un compte.
+        {:else}
+          Créez les comptes des Membres et des Invités, désactivez-les ou réinitialisez leur mot de
+          passe.
+        {/if}
+      </p>
+      <button type="button" onclick={() => (usersOpen = true)}>Gérer les comptes</button>
+    </section>
+  {/if}
 
   <section aria-labelledby="settings-appearance">
     <h3 id="settings-appearance">Apparence</h3>
@@ -187,6 +231,10 @@
     <button type="button" class="primary" onclick={() => dialog?.close()}>Fermer</button>
   </footer>
 </dialog>
+
+{#if usersOpen}
+  <UsersPanel onclose={() => (usersOpen = false)} />
+{/if}
 
 <style>
   dialog {
@@ -308,6 +356,26 @@
   .signout:hover:not(:disabled) {
     border-color: var(--danger-border);
     color: var(--danger-text);
+  }
+
+  .account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .password-box {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .success {
+    margin: 10px 0 0;
+    color: var(--info-text);
+    font-size: 14px;
   }
 
   fieldset {

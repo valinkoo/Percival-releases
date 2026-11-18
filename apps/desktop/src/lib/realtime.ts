@@ -5,9 +5,11 @@ import type {
   MessageDto,
   ServerToClientEvents,
   SocketAuth,
+  UserDto,
   UserTypingEvent,
 } from '@percival/shared';
 import { io, type Socket } from 'socket.io-client';
+import type { SessionEndReason } from './api';
 
 export type ConnectionState = 'connecting' | 'connected' | 'offline';
 
@@ -18,10 +20,15 @@ export interface RealtimeHandlers {
   onMessageDeleted(event: MessageDeletedEvent): void;
   onTyping(event: UserTypingEvent): void;
   onChannel(channel: ChannelDto): void;
+  onChannelUpdated(channel: ChannelDto): void;
+  /** The user can no longer see this channel (removed from its members, or their role changed). */
+  onChannelRemoved(channelId: string): void;
+  /** The signed-in account itself changed (its role, for instance). */
+  onAccountUpdated(user: UserDto): void;
   /** The connection came back after a loss: events may have been missed in between. */
   onResume(): void;
-  /** The server refused the token (expired, or the account no longer exists). */
-  onUnauthorized(): void;
+  /** The server refused the token (expired, closed, no such account) or the account is disabled. */
+  onUnauthorized(reason: SessionEndReason): void;
 }
 
 export interface RealtimeConnection {
@@ -73,8 +80,13 @@ export function connectRealtime(
 
   socket.on('connect_error', (error) => {
     if (closed) return;
-    if (error.message === 'unauthorized') {
-      handlers.onUnauthorized();
+    if (error.message === 'account_disabled') {
+      handlers.onUnauthorized('disabled');
+      return;
+    }
+    // A password to change is refused like a closed session: signing in again shows the screen.
+    if (error.message === 'unauthorized' || error.message === 'password_change_required') {
+      handlers.onUnauthorized('expired');
       return;
     }
     handlers.onState('offline');
@@ -89,6 +101,9 @@ export function connectRealtime(
   socket.on('message_deleted', (event) => handlers.onMessageDeleted(event));
   socket.on('user_typing', (event) => handlers.onTyping(event));
   socket.on('channel_created', (channel) => handlers.onChannel(channel));
+  socket.on('channel_updated', (channel) => handlers.onChannelUpdated(channel));
+  socket.on('channel_removed', ({ id }) => handlers.onChannelRemoved(id));
+  socket.on('account_updated', (user) => handlers.onAccountUpdated(user));
 
   return {
     sendTyping(channelId) {
